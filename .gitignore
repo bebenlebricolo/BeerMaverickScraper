@@ -33,3 +33,4 @@ pip-delete-this-directory.txt
 .vscode
 .venv
 .pytest_*
+.cache
