@@ -214,11 +214,11 @@ class HopScraper(BaseScraper) :
         
         try :
             if len(values) == 1 :
-                range.min = float(values[0].strip())
-                range.max = range.min
+                range.min.value = float(values[0].strip())
+                range.max.value = range.min.value
             if len(values) == 2 :
-                range.min = float(values[0].strip())
-                range.max = float(values[1].strip())
+                range.min.value = float(values[0].strip())
+                range.max.value = float(values[1].strip())
         # Might fail if one of the values is not convertible to float (happens with some default values)
         # In some cases, numerical values are replaced by the "Unknown" keyword, which makes parsing more difficult
         except :
@@ -257,8 +257,8 @@ class HopScraper(BaseScraper) :
                 if len(values) < 1 or len(values) > 2 :
                     error_list.append("Caught unexpected content for Beta acids")
                     continue
-                hop.alpha_beta_ratio.min = values[0].strip()
-                hop.alpha_beta_ratio.max = values[1].strip()
+                hop.alpha_beta_ratio.min.value = values[0].strip()
+                hop.alpha_beta_ratio.max.value = values[1].strip()
                 continue
                 
             if  "Hop Storage Index (HSI)" in th.contents[0].text:
@@ -297,7 +297,7 @@ class HopScraper(BaseScraper) :
                 continue
             
             if "All Others" in th.contents[0].text:
-                if not self.parse_percentage_value(td, hop.other) :
+                if not self.parse_percentage_value(td, hop.other_oils) :
                     error_list.append("Caught invalid format for other oils")
                 continue
             

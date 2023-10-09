@@ -1,7 +1,7 @@
 import unittest
 from ..parallel import spread_load_for_parallel
 
-class TestBaseScraper(unittest.TestCase):
+class TestUtilsParallel(unittest.TestCase):
     def test_load_spreading(self):
         input_list = [
             "something 1",

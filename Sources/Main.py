@@ -93,7 +93,7 @@ def main(args):
 
     
     hop_scrapper = HopScraper()
-    result = hop_scrapper.scrap(hop_links[:max_threads], max_threads)
+    result = hop_scrapper.scrap(hop_links, max_threads)
     
     hops_pair = hop_scrapper.ok_items
     hops_json : list[dict] = []
@@ -105,8 +105,8 @@ def main(args):
         hops_json.append(out_dict)
     
     Directories.ensure_cache_directory_exists()
-    with open(Directories.CACHE_DIR.joinpath("hops.json")) as file :
-        pass
+    with open(Directories.CACHE_DIR.joinpath("hops.json"), "w") as file :
+        json.dump({"hops" : hops_json}, file, indent=4)
 
     return 0
 
