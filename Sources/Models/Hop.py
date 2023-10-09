@@ -11,9 +11,26 @@ class HopAttribute(Enum) :
     Hybrid = "Hybrid"
 
 
+def hop_attribute_from_str(input : str) -> HopAttribute :
+    match input :
+        case HopAttribute.Bittering.value :
+            return HopAttribute.Bittering
+        
+        case HopAttribute.Aromatic.value :
+            return HopAttribute.Aromatic
+        
+        case HopAttribute.Hybrid.value | "Dual" :
+            return HopAttribute.Hybrid
+    
+        case _ :
+            return HopAttribute.Hybrid
+
+
 @dataclass
 class Hop(Jsonable) :
     # Basic characteristics
+    name : str = field(default_factory=str)
+    orig_link : str = field(default_factory=str)
     purpose : HopAttribute = HopAttribute.Bittering
     country : str = field(default_factory=str)
     international_code : str = field(default_factory=str)

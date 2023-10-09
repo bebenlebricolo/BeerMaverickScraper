@@ -4,7 +4,8 @@ from enum import Enum
 from dataclasses import dataclass, field
 
 from .Ranges import NumericRange
-from .Jsonable import Jsonable
+from .Jsonable import *
+
 
 @dataclass
 class Fermentable(Jsonable) :
@@ -20,9 +21,9 @@ class Fermentable(Jsonable) :
 
     # Fermentable details
     srm : NumericRange = field(default_factory=NumericRange)
-    diastatic_power : float
-    ppg : float
-    batch_max : float
+    diastatic_power : float = 0
+    ppg : float = 0
+    batch_max : float = 0
     
 
 

@@ -1,8 +1,11 @@
 #!/usr/bin/python3
 import sys
 import json
-
 from pathlib import Path
+
+import requests
+from bs4 import BeautifulSoup
+
 from .HopScraper import HopScraper
 from .YeastScraper import YeastPageParser
 from .FermentableScraper import FermentablePageScrapper
@@ -54,7 +57,7 @@ def read_links_from_cache(filepath: Path) -> list[str]:
 
 
 def main(args):
-    max_threads = 20
+    max_threads = 1
 
     Directories.ensure_cache_directory_exists()
     
@@ -90,12 +93,7 @@ def main(args):
 
     
     hop_scrapper = HopScraper()
-    hop_scrapper.parse_page
-
-
-        
-
-
+    result = hop_scrapper.scrap(hop_links, max_threads)
 
     return 0
 

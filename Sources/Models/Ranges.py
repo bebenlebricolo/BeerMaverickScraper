@@ -3,10 +3,10 @@ from .Jsonable import *
 
 @dataclass
 class NumericRange(Jsonable):
-    min : float
-    max : float
+    min : float = 0
+    max : float = 0
 
 @dataclass
 class RatioRange(Jsonable):
-    min : str
-    max : str
+    min : str = 0
+    max : str = 0

@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .Ranges import NumericRange
-from .Jsonable import Jsonable
+from .Jsonable import *
+
 
 @dataclass
 class Water(Jsonable) :

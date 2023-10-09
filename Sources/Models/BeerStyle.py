@@ -4,6 +4,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 
 from .Ranges import NumericRange
+from .Jsonable import *
 
 @dataclass
 class BeerStyle(Jsonable) :

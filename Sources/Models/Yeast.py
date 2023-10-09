@@ -2,7 +2,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .Ranges import NumericRange
-from .Jsonable import Jsonable
+from .Jsonable import *
+
 
 @dataclass
 class Yeast(Jsonable):
@@ -14,7 +15,7 @@ class Yeast(Jsonable):
 
     description : str = field(default_factory=str)
     tags : list[str] = field(default_factory=list)
-    alcohol_tolerance : float
+    alcohol_tolerance : float = 0
     attenuation : NumericRange = field(default_factory=NumericRange)
     floculation : str = field(default_factory=list)
     optimal_temperature : NumericRange = field(default_factory=NumericRange)
