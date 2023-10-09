@@ -57,7 +57,7 @@ class Hop(Jsonable) :
     # Textual description of beer styles, this is written in length text.
     # Assuming the populating data comes from an Api of some sort, we can probably identify a pattern and remove it programmatically to 
     # just retrieve the styles themselves.
-    beer_styles : str = field(default_factory=str)
+    beer_styles : list[str] = field(default_factory=list)
     
     # May be changed to use a unique id instead of "just" the hop name, using the pointed URL and maybe a map that pairs an URL to a unique hop
     # For now this will do, especially if there is no name conflict.

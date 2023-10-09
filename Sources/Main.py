@@ -57,7 +57,7 @@ def read_links_from_cache(filepath: Path) -> list[str]:
 
 
 def main(args):
-    max_threads = 1
+    max_threads = int(args[1])
 
     Directories.ensure_cache_directory_exists()
     
@@ -93,7 +93,20 @@ def main(args):
 
     
     hop_scrapper = HopScraper()
-    result = hop_scrapper.scrap(hop_links, max_threads)
+    result = hop_scrapper.scrap(hop_links[:max_threads], max_threads)
+    
+    hops_pair = hop_scrapper.ok_items
+    hops_json : list[dict] = []
+    for hop in hops_pair :
+        out_dict = {
+            "hop" : hop.item.to_json(),
+            "warnings" : hop.errors
+        }
+        hops_json.append(out_dict)
+    
+    Directories.ensure_cache_directory_exists()
+    with open(Directories.CACHE_DIR.joinpath("hops.json")) as file :
+        pass
 
     return 0
 

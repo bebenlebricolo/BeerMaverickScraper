@@ -42,10 +42,15 @@ class BaseScraper :
     def get_formatted_time(self) -> str :
         return datetime.now().strftime("%H:%M:%S")
 
-    def get_duration(self, start : datetime, end : datetime = datetime.now()) -> timedelta :
+    def get_duration(self, start : datetime, end : Optional[datetime] = None) -> timedelta :
+        if end == None :
+            end = datetime.now()
         return end - start
     
-    def get_duration_formatted(self, start : datetime, end : datetime = datetime.now()) -> str :
+    def get_duration_formatted(self, start : datetime, end : Optional[datetime] = None) -> str :
+        if end == None :
+            end = datetime.now()
+        
         duration = self.get_duration(start, end)
         minutes = duration.seconds // 60
         seconds = duration.seconds - minutes * 60
