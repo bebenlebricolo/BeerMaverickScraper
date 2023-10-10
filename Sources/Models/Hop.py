@@ -1,7 +1,9 @@
 #!/usr/bin/python3
 
 from enum import Enum
-from dataclasses import dataclass, field
+from dataclasses import field
+from typing import cast
+
 from .Ranges import RatioRange, NumericRange
 from .Jsonable import *
 
@@ -15,13 +17,13 @@ def hop_attribute_from_str(input : str) -> HopAttribute :
     match input :
         case HopAttribute.Bittering.value :
             return HopAttribute.Bittering
-        
+
         case HopAttribute.Aromatic.value :
             return HopAttribute.Aromatic
-        
+
         case HopAttribute.Hybrid.value | "Dual" :
             return HopAttribute.Hybrid
-    
+
         case _ :
             return HopAttribute.Hybrid
 
@@ -55,15 +57,47 @@ class Hop(Jsonable) :
     other_oils : NumericRange = field(default_factory=NumericRange)
 
     # Textual description of beer styles, this is written in length text.
-    # Assuming the populating data comes from an Api of some sort, we can probably identify a pattern and remove it programmatically to 
+    # Assuming the populating data comes from an Api of some sort, we can probably identify a pattern and remove it programmatically to
     # just retrieve the styles themselves.
     beer_styles : list[str] = field(default_factory=list)
-    
+
     # May be changed to use a unique id instead of "just" the hop name, using the pointed URL and maybe a map that pairs an URL to a unique hop
     # For now this will do, especially if there is no name conflict.
     substitutes : list[str] = field(default_factory=list)
 
-    def to_json(self) -> dict :
+
+    def __eq__(self, other: object) -> bool:
+        if type(self) != type(other) :
+            return False
+        other = cast(Hop, other)
+        self = cast(Hop, self)
+        identical = True
+        identical &= self.name ==  other.name
+        identical &= self.orig_link == other.orig_link
+        identical &= self.purpose == other.purpose
+        identical &= self.country == other.country
+        identical &= self.international_code == other.international_code
+        identical &= self.cultivar_id == other.cultivar_id
+        identical &= self.origin_txt == other.origin_txt
+        identical &= self.flavor_txt == other.flavor_txt
+        identical &= self.tags == other.tags
+        identical &= self.alpha_acids == other.alpha_acids
+        identical &= self.beta_acids == other.beta_acids
+        identical &= self.alpha_beta_ratio == other.alpha_beta_ratio
+        identical &= self.hop_storage_index == other.hop_storage_index
+        identical &= self.co_humulone_normalized == other.co_humulone_normalized
+        identical &= self.total_oils == other.total_oils
+        identical &= self.myrcene == other.myrcene
+        identical &= self.humulene == other.humulene
+        identical &= self.caryophyllene == other.caryophyllene
+        identical &= self.farnesene == other.farnesene
+        identical &= self.other_oils == other.other_oils
+        identical &= self.beer_styles == other.beer_styles
+        identical &= self.substitutes == other.substitutes
+
+        return identical
+
+    def to_json(self) -> dict[str, Any] :
         return {
             "name" : self.name,
             "origLink" : self.orig_link,
@@ -88,8 +122,8 @@ class Hop(Jsonable) :
             "beerStyles" : self.beer_styles,
             "substitutes" : self.substitutes
         }
-    
-    def from_json(self, content : dict) -> None :
+
+    def from_json(self, content : dict[str, Any]) -> None :
         self.name = self._read_prop("name", content, "")
         self.orig_link = self._read_prop("origLink", content, "")
         self.purpose = hop_attribute_from_str(self._read_prop("purpose", content, ""))
@@ -112,4 +146,6 @@ class Hop(Jsonable) :
         self.other_oils.from_json(content["otherOils"])
         self.beer_styles = self._read_prop("beerStyles", content, [])
         self.substitutes = self._read_prop("substitutes", content, [])
+
+
 

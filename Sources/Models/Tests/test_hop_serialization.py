@@ -14,27 +14,27 @@ class TestHopModelSerialization(unittest.TestCase):
         hop.origin_txt = "Some origin"
         hop.flavor_txt = "some flavor"
         hop.tags = ["tag1", "tag2", "tag3"]
-        
-        hop.alpha_acids.max.value = "3"
-        hop.alpha_acids.min.value = "2"
-        
-        hop.beta_acids.max.value = "4"
-        hop.beta_acids.min.value = "5"
-        
+
+        hop.alpha_acids.max.value = 3
+        hop.alpha_acids.min.value = 2
+
+        hop.beta_acids.max.value = 4
+        hop.beta_acids.min.value = 5
+
         hop.alpha_beta_ratio.max.value = "3:2"
         hop.alpha_beta_ratio.min.value = "2:1"
-        
+
         hop.hop_storage_index = 85
         hop.co_humulone_normalized.max.value = 66
         hop.co_humulone_normalized.min.value = 99
-        
+
         hop.total_oils.max.value = 1
         hop.total_oils.min.value = 2
-        
+
         hop.myrcene.max.value = 3
         hop.myrcene.min.value = 4
-        
-        hop.humulene.max.value = 5 
+
+        hop.humulene.max.value = 5
         hop.humulene.min.value = 6
 
         hop.caryophyllene.max.value = 7
@@ -42,7 +42,7 @@ class TestHopModelSerialization(unittest.TestCase):
 
         hop.farnesene.max.value = 9
         hop.farnesene.min.value = 10
-        
+
         hop.other_oils.max.value = 11
         hop.other_oils.min.value = 12
 
@@ -55,7 +55,7 @@ class TestHopModelSerialization(unittest.TestCase):
         parsed_hop.from_json(content)
 
         # Data is good but we need a custom comparator
-        # self.assertEqual(hop.to_json(), parsed_hop.to_json())
+        self.assertEqual(hop, parsed_hop)
 
 if __name__ == "__main__" :
-    unittest.main() 
+    unittest.main()
