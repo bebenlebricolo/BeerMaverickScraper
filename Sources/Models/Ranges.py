@@ -29,6 +29,8 @@ class NumericRange(Jsonable):
         identical &= self.min.value == other.min.value
         return identical
 
+
+
 class RatioRange(Jsonable):
     min : JsonProperty[str] = field(default_factory=JsonProperty[str])
     max : JsonProperty[str] = field(default_factory=JsonProperty[str])
