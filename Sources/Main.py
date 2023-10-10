@@ -90,6 +90,8 @@ def main(args : list[str]):
 
     hop_scrapper = HopScraper()
 
+    # Seems like running Tasks or threads is roughly equivalent in terms of performances
+    # Takes roughly 11-15 seconds for 318 hops with 40 - 100 tasks/threads
     run_threads = False
     if run_threads :
         result = hop_scrapper.scrap(hop_links, max_threads)

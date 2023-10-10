@@ -153,7 +153,7 @@ class HopScraper(BaseScraper[Hop]) :
                 output_item_collection.append(output_item_list)
 
                 tg.create_task(coro=self.atomic_scrap_async(sublist, error_item_list, output_item_list))
-
+        await self.async_client.close()
         print(f"All tasks returned, time : {self.get_duration_formatted(start_time)}")
 
         # Flattening returned items yeast collection
@@ -251,17 +251,17 @@ class HopScraper(BaseScraper[Hop]) :
             error_list.append(f"Could not find {header_name} header")
             return False
 
-        p_node : list[bs4.Tag] = header.find_all_next("p")
-        experienced_brewer_node : list[bs4.Tag] = [x for x in p_node if "Experienced brewers have chosen the following hop" in x.text]
+        p_node : bs4.ResultSet[bs4.PageElement] = header.find_all_next("p")
+        experienced_brewer_node : list[bs4.PageElement] = [x for x in p_node if "Experienced brewers have chosen the following hop" in x.text] # type: ignore
         if not experienced_brewer_node :
             error_list.append("Could not isolate substitution list")
             return False
-        experienced_brewer_node : bs4.Tag = experienced_brewer_node[0]
+        experienced_brewer_node : bs4.PageElement = experienced_brewer_node[0] #type: ignore
 
-        substitution_list_node = experienced_brewer_node.find_next_sibling("ul")
+        substitution_list_node : bs4.Tag = experienced_brewer_node.find_next_sibling("ul") # type: ignore
         bullet_nodes : list[bs4.Tag] = substitution_list_node.find_all("li")
         for bullet in bullet_nodes :
-            a_node = bullet.find("a")
+            a_node : bs4.Tag = bullet.find("a") # type: ignore
             hop.substitutes.append(self.format_text(a_node.text))
 
         return True
@@ -276,9 +276,9 @@ class HopScraper(BaseScraper[Hop]) :
         style_node = header.find_next_sibling("p")
 
         # Styles seem to be consistently highlighted in bold text
-        styles : list[bs4.Tag] = style_node.find_all("b")
-        for style in styles :
-            hop.beer_styles.append(style.text)
+        styles : list[bs4.Tag] = style_node.find_all("b") #type: ignore
+        for style in styles :                             #type: ignore
+            hop.beer_styles.append(style.text)            #type: ignore
         return True
 
     def find_header_by_name(self, parser : bs4.BeautifulSoup, name : str) -> Optional[bs4.Tag] :
@@ -288,7 +288,7 @@ class HopScraper(BaseScraper[Hop]) :
             return None
         return header[0]
 
-    def parse_numeric_range(self, td : bs4.Tag, range : NumericRange, unit_char = "%") -> bool :
+    def parse_numeric_range(self, td : bs4.Tag, range : NumericRange, unit_char : str = "%") -> bool :
         values = td.contents[0].text.rstrip(unit_char).split("-")
 
         if len(values) < 1 or len(values) > 2:
@@ -316,10 +316,10 @@ class HopScraper(BaseScraper[Hop]) :
             error_list.append("Could not parse brewing values")
             return False
 
-        tr_nodes :list[bs4.Tag] = table.find_all("tr")
-        for node in tr_nodes :
-            th = node.find("th")
-            td = node.find("td")
+        tr_nodes :list[bs4.Tag] = table.find_all("tr") #type: ignore
+        for node in tr_nodes :                         #type: ignore
+            th : bs4.Tag = node.find("th")             #type: ignore
+            td : bs4.Tag = node.find("td")             #type: ignore
 
             if not th or not td :
                 continue
@@ -397,23 +397,22 @@ class HopScraper(BaseScraper[Hop]) :
         # Listing nodes until finding the next Header
         # because sometimes the Tags node can't be found (on old varieties)
         nodes_to_inspect : list[bs4.Tag] = []
-        next_node = header.find_next_sibling()
-        while next_node != None and next_node.name != "h2" :
+        next_node : bs4.Tag = header.find_next_sibling()     #type: ignore
+        while next_node != None and next_node.name != "h2" : #type: ignore
             if next_node.name == "p" :
                 nodes_to_inspect.append(next_node)
-            next_node = next_node.find_next_sibling()
+            next_node = next_node.find_next_sibling()        #type: ignore
 
         for p_node in nodes_to_inspect :
             # Found tags !
             if "Tags:" in p_node.text :
                 tags_node = p_node.find("em")
                 if not tags_node :
-                    error_list.append()
-                    print(f"No tags found on hop {hop.name}")
+                    error_list.append(f"No tags found on hop {hop.name}")
                     return False
-                tags : list [bs4.Tag] = tags_node.find_all("a", attrs={"class": "text-muted"})
-                for tag in tags :
-                    hop.tags.append(tag.text.replace("#", ""))
+                tags : bs4.ResultSet[bs4.PageElement] = tags_node.find_all("a", attrs={"class": "text-muted"}) #type: ignore
+                for tag in tags :                                   #type: ignore
+                    hop.tags.append(tag.text.replace("#", ""))      #type: ignore
                 break
 
             hop.flavor_txt += p_node.text + " "
@@ -429,11 +428,11 @@ class HopScraper(BaseScraper[Hop]) :
             return False
 
         nodes_list : list[bs4.Tag] =[]
-        next_node = header.find_next()
+        next_node : bs4.Tag = header.find_next() #type: ignore
         while next_node.name != "h2" :
             if next_node.name != "span" :
                 nodes_list.append(next_node)
-            next_node = next_node.find_next()
+            next_node = next_node.find_next() #type: ignore
 
         for node in nodes_list :
             hop.origin_txt += node.text + " "
@@ -452,32 +451,27 @@ class HopScraper(BaseScraper[Hop]) :
         ]
 
         for th in all_th :
-            content = th.contents[0]
+            content = th.contents[0].text
             if not content in required :
                 continue
 
             parent_node = th.parent
-            td_node = parent_node.find("td")
+            td_node : bs4.Tag = parent_node.find("td") #type: ignore
             if content == required[0] :
                 a_node = td_node.find("a")
-                txt = self.format_text(a_node.contents[0])
+                txt = self.format_text(a_node.contents[0].text) #type: ignore
                 hop.purpose = hop_attribute_from_str(txt)
 
             elif content == required[1] :
-                hop.country = td_node.contents[0]
+                hop.country = td_node.contents[0].text
                 hop.country = self.format_text(hop.country)
 
             elif content == required[2] :
-                hop.international_code = td_node.contents[0]
+                hop.international_code = td_node.contents[0].text
                 hop.international_code = self.format_text(hop.international_code)
 
             elif content == required[3] :
-                hop.cultivar_id = td_node.contents[0]
+                hop.cultivar_id = td_node.contents[0].text
                 hop.cultivar_id = self.format_text(hop.cultivar_id)
 
         return True
-
-
-
-
-
