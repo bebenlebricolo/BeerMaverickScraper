@@ -268,7 +268,7 @@ class HopScraper(BaseScraper[Hop]) :
         bullet_nodes : list[bs4.Tag] = substitution_list_node.find_all("li")
         for bullet in bullet_nodes :
             a_node : bs4.Tag = bullet.find("a") # type: ignore
-            hop.substitutes.append(self.format_text(a_node.text))
+            hop.substitutes.append(self.format_text(a_node.attrs["href"]))
 
         return True
 

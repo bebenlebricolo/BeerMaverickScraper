@@ -19,7 +19,7 @@ class Yeast(Jsonable):
     tags : list[str] = field(default_factory=list)
     alcohol_tolerance : float = 0
     attenuation : NumericRange = field(default_factory=NumericRange)
-    floculation : str = field(default_factory=str)
+    flocculation : str = field(default_factory=str)
     optimal_temperature : NumericRange = field(default_factory=NumericRange)
 
     comparable_yeasts : list[str] = field(default_factory=list)
@@ -46,7 +46,7 @@ class Yeast(Jsonable):
 
         self.alcohol_tolerance = self._read_prop("alcoholTolerance", content, "")
         self.attenuation.from_json(content["attenuation"])
-        self.floculation = self._read_prop("floculation", content, "")
+        self.flocculation = self._read_prop("flocculation", content, "")
         self.optimal_temperature.from_json(content["optimal_temperature"])
 
         self.comparable_yeasts = []
@@ -61,7 +61,7 @@ class Yeast(Jsonable):
 
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        content = {
             "name" : self.name,
             "brand" : self.brand,
             "link" : self.link,
@@ -73,12 +73,13 @@ class Yeast(Jsonable):
             "tags" : self.tags,
             "alcoholTolerance" : self.alcohol_tolerance,
             "attenuation" : self.attenuation.to_json(),
-            "floculation" : self.floculation,
+            "flocculation" : self.flocculation,
             "optimalTemperature" : self.optimal_temperature.to_json(),
             "comparableYeasts" : self.comparable_yeasts,
-            "commonBeerStyles" : self.common_beer_styles,
-            "parsingErrors" : self.parsing_errors
+            "commonBeerStyles" : self.common_beer_styles
         }
+        content.update(super().to_json())
+        return content
 
     def add_parsing_error(self, error : str) :
         if self.parsing_errors == None :
@@ -87,4 +88,22 @@ class Yeast(Jsonable):
 
     def __eq__(self, other: object) -> bool:
         identical = super().__eq__(other)
+        other = cast(Yeast, other)
+        self = cast(Yeast, self)
+        identical &= self.name == other.name
+        identical &= self.brand == other.brand
+        identical &= self.link == other.link
+        identical &= self.type == other.type
+        identical &= self.packaging == other.packaging
+        identical &= self.has_bacterias == other.has_bacterias
+        identical &= self.species == other.species
+        identical &= self.description == other.description
+        identical &= self.tags == other.tags
+        identical &= self.alcohol_tolerance == other.alcohol_tolerance
+        identical &= self.attenuation == other.attenuation
+        identical &= self.flocculation == other.flocculation
+        identical &= self.optimal_temperature == other.optimal_temperature
+        identical &= self.comparable_yeasts == other.comparable_yeasts
+        identical &= self.common_beer_styles == other.common_beer_styles
+        return identical
 

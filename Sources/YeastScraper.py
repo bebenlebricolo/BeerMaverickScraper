@@ -1,3 +1,5 @@
+from cgitb import small
+import attr
 import requests
 import asyncio
 import aiohttp
@@ -14,9 +16,8 @@ from .Models.Ranges import NumericRange
 from .Utils import parallel
 
 class YeastScraper(BaseScraper[Yeast]) :
-    Yeasts : list[Yeast]
+    yeasts : list[Yeast]
     error_items : list[ItemPair[str]]
-    ok_items : list[ItemPair[Yeast]]
 
     def __init__(self, async_client: Optional[aiohttp.ClientSession] = None,
                  request_client: Optional[requests.Session] = None) :
@@ -24,7 +25,7 @@ class YeastScraper(BaseScraper[Yeast]) :
         self.reset()
 
     def reset(self) :
-        self.Yeasts = []
+        self.yeasts = []
         self.error_items = []
         self.ok_items = []
 
@@ -53,8 +54,8 @@ class YeastScraper(BaseScraper[Yeast]) :
             print(f"Total execution time : {self.get_duration_formatted(start)}")
             return True
 
-        error_item_collection : list[list[ItemPair[Yeast]]] = []
-        output_item_collection : list[list[ItemPair[Yeast]]] = []
+        error_item_collection : list[list[Yeast]] = []
+        output_item_collection : list[list[Yeast]] = []
 
         print(f"Spawning {num_threads} new threads ...")
         thread_list : list[Thread] = []
@@ -92,22 +93,26 @@ class YeastScraper(BaseScraper[Yeast]) :
         print(f"All threads returned, time : {self.get_duration_formatted(start_time)}")
 
         # Flattening returned items yeast collection
-        self.ok_items : list[ItemPair[Yeast]] = [item for sublist in output_item_collection for item in sublist]
+        self.yeasts : list[Yeast] = [item for sublist in output_item_collection for item in sublist]
         self.error_items = [item for sublist in error_item_collection for item in sublist] #type: ignore
-        self.hops = [pair.item for pair in self.ok_items]
-        warnings = [error for item in self.ok_items for error in item.errors ]
 
         # Alert for errors
         if len(self.error_items) > 0 :
             print("Caught some errors while retrieving data from website : error list is not empty !")
 
-        if len(warnings) > 0 :
+        if self.has_warnings(self.yeasts):
             print("Caught some non critical errors (warnings) while retrieving data from website.")
 
         print(f"Retrieved hops from website ! Finished at {self.get_formatted_time()}")
         print(f"Total execution time : {self.get_duration_formatted(start_time)}")
 
         return True
+
+    def has_warnings(self, yeasts : list[Yeast]) -> bool:
+        for yeast in yeasts :
+            if yeast.parsing_errors != None :
+                return True
+        return False
 
     async def scrap_async(self, links: list[str], num_tasks: int = -1) -> bool:
         self.reset()
@@ -126,7 +131,7 @@ class YeastScraper(BaseScraper[Yeast]) :
                 if len(error_list) > 0 :
                     print("Caught some issues while retrieving Yeasts from website.")
 
-                self.Yeasts = item_list
+                self.yeasts = item_list
             except Exception as e :
                 print(f"Caught exception while scraping Yeasts : {e}")
 
@@ -134,8 +139,8 @@ class YeastScraper(BaseScraper[Yeast]) :
             print(f"Total execution time : {self.get_duration_formatted(start)}")
             return True
 
-        error_item_collection : list[list[ItemPair[Yeast]]] = []
-        output_item_collection : list[list[ItemPair[Yeast]]] = []
+        error_item_collection : list[list[Yeast]] = []
+        output_item_collection : list[list[Yeast]] = []
 
         print(f"Spawning {num_tasks} new async tasks ...")
         start_time = datetime.datetime.now()
@@ -162,16 +167,14 @@ class YeastScraper(BaseScraper[Yeast]) :
         print(f"All tasks returned, time : {self.get_duration_formatted(start_time)}")
 
         # Flattening returned items yeast collection
-        self.ok_items : list[ItemPair[Yeast]] = [item for sublist in output_item_collection for item in sublist]
+        self.yeasts : list[Yeast] = [item for sublist in output_item_collection for item in sublist]
         self.error_items = [item for sublist in error_item_collection for item in sublist] #type: ignore
-        self.Yeasts = [pair.item for pair in self.ok_items]
-        warnings = [error for item in self.ok_items for error in item.errors ]
 
         # Alert for errors
         if len(self.error_items) > 0 :
             print("Caught some errors while retrieving data from website : error list is not empty !")
 
-        if len(warnings) > 0 :
+        if self.has_warnings(self.yeasts):
             print("Caught some non critical errors (warnings) while retrieving data from website.")
 
         print(f"Retrieved Yeasts from website ! Finished at {self.get_formatted_time()}")
@@ -179,7 +182,7 @@ class YeastScraper(BaseScraper[Yeast]) :
 
         return True
 
-    async def atomic_scrap_async(self, links: list[str], out_error_item_list : list[ItemPair[Yeast]], out_item_list : list[ItemPair[Yeast]]) -> None:
+    async def atomic_scrap_async(self, links: list[str], out_error_item_list : list[Yeast], out_item_list : list[Yeast]) -> None:
         """Atomic function used by asynchronous executers (asyncio runner).
            Returns two output lists :
            * out_error_item_list : list of rejected objects (caused by a hard issue, like http connection failing/etc)
@@ -192,19 +195,20 @@ class YeastScraper(BaseScraper[Yeast]) :
             # Critical error, reject data
             response = await self.async_client.get(link) #type: ignore
             if response.status != 200 :
-                out_error_item_list.append(ItemPair(item=new_yeast, errors=[str(response)]))
+                new_yeast.add_parsing_error(str(response))
+                out_error_item_list.append(new_yeast)
                 continue
 
             try:
                 parser = bs4.BeautifulSoup(await response.content.read(), "html.parser")
                 self.parse_yeast_item_from_page(parser, new_yeast, error_list)
-                out_item_list.append(ItemPair(item=new_yeast, errors=error_list))
+                out_item_list.append(new_yeast)
 
             except : # Exception as e :
-                out_error_item_list.append(ItemPair(item=new_yeast, errors=error_list))
+                out_error_item_list.append(new_yeast)
                 traceback.print_exc()
 
-    def atomic_scrap(self, links: list[str], out_error_item_list : list[ItemPair[Yeast]], out_item_list : list[ItemPair[Yeast]]) -> None:
+    def atomic_scrap(self, links: list[str], out_error_item_list : list[Yeast], out_item_list : list[Yeast]) -> None:
         """Atomic function used by asynchronous executers (threads).
            Returns two output lists :
            * out_error_item_list : list of rejected objects (caused by a hard issue, like http connection failing/etc)
@@ -212,21 +216,22 @@ class YeastScraper(BaseScraper[Yeast]) :
         for link in links :
             error_list : list[str] = []
 
-            new_Yeast = Yeast(link=link)
+            new_yeast = Yeast(link=link)
 
             # Critical error, reject data
             response = self.request_client.get(link) #type: ignore
             if response.status_code != 200 :
-                out_error_item_list.append(ItemPair(item=new_Yeast, errors=[str(response)]))
+                new_yeast.add_parsing_error(str(response))
+                out_error_item_list.append(new_yeast)
                 continue
 
             try:
                 parser = bs4.BeautifulSoup(response.content, "html.parser")
-                self.parse_yeast_item_from_page(parser, new_Yeast, error_list)
-                out_item_list.append(ItemPair(item=new_Yeast, errors=error_list))
+                self.parse_yeast_item_from_page(parser, new_yeast, error_list)
+                out_item_list.append(new_yeast)
 
             except : # Exception as e :
-                out_error_item_list.append(ItemPair(item=new_Yeast, errors=error_list))
+                out_error_item_list.append(new_yeast)
                 traceback.print_exc()
 
     def parse_yeast_item_from_page(self, parser : bs4.BeautifulSoup, yeast : Yeast, error_list : list[str]) -> None :
@@ -242,48 +247,46 @@ class YeastScraper(BaseScraper[Yeast]) :
         success &= self.parse_basics_section(parser, yeast, error_list)
         success &= self.parse_description_section(parser, yeast, error_list)
         success &= self.parse_brewing_properties(parser, yeast, error_list)
-        # success &= self.parse_flavor_and_aroma_section(parser, Yeast, error_list)
-        # success &= self.parse_beer_style(parser, Yeast, error_list)
-        # success &= self.parse_Yeast_substitution(parser, Yeast, error_list)
+        success &= self.parse_beer_style(parser, yeast, error_list)
+        success &= self.parse_comparable_yeast(parser, yeast, error_list)
 
         if not success :
             error_list.append("Some parts of this Yeast failed to be read")
 
-    def parse_Yeast_substitution(self, parser : bs4.BeautifulSoup, Yeast : Yeast, error_list : list[str]) -> bool :
-        header_name = "Yeast Substitutions"
+    def parse_comparable_yeast(self, parser : bs4.BeautifulSoup, yeast : Yeast, error_list : list[str]) -> bool :
+        header_name = "Comparable Beer Yeast"
         header = self.find_header_by_name(parser, header_name)
         if not header :
             error_list.append(f"Could not find {header_name} header")
             return False
 
-        p_node : bs4.ResultSet[bs4.PageElement] = header.find_all_next("p")
-        experienced_brewer_node : list[bs4.PageElement] = [x for x in p_node if "Experienced brewers have chosen the following Yeast" in x.text] # type: ignore
-        if not experienced_brewer_node :
-            error_list.append("Could not isolate substitution list")
-            return False
-        experienced_brewer_node : bs4.PageElement = experienced_brewer_node[0] #type: ignore
-
-        substitution_list_node : bs4.Tag = experienced_brewer_node.find_next_sibling("ul") # type: ignore
+        substitution_list_node : bs4.Tag = header.find_next_sibling("ul") # type: ignore
         bullet_nodes : list[bs4.Tag] = substitution_list_node.find_all("li")
         for bullet in bullet_nodes :
             a_node : bs4.Tag = bullet.find("a") # type: ignore
-            yeast.substitutes.append(self.format_text(a_node.text))
+            yeast.comparable_yeasts.append(self.format_text(a_node.attrs["href"]))
 
         return True
 
-    def parse_beer_style(self, parser : bs4.BeautifulSoup, Yeast : Yeast, error_list : list[str]) -> bool :
-        header_name = "Beer Styles"
+    def parse_beer_style(self, parser : bs4.BeautifulSoup, yeast : Yeast, error_list : list[str]) -> bool :
+        header_name = "Common Beer Styles"
         header = self.find_header_by_name(parser, header_name)
         if not header :
             error_list.append(f"Could not find {header_name} header")
             return False
 
-        style_node = header.find_next_sibling("p")
+        textual_node : bs4.Tag = header.find_next_sibling("p") #type: ignore
+        style_node :bs4.Tag = textual_node.find_next_sibling("p") #type: ignore
 
-        # Styles seem to be consistently highlighted in bold text
-        styles : list[bs4.Tag] = style_node.find_all("b") #type: ignore
-        for style in styles :                             #type: ignore
-            Yeast.beer_styles.append(style.text)            #type: ignore
+        styles = style_node.text.split(",")
+        for style in styles :
+            if styles.index(style) == len(styles) - 1 :
+                last_ones = style.split("&")
+                for last in last_ones :
+                    yeast.common_beer_styles.append(last.strip())
+            else :
+                yeast.common_beer_styles.append(style.strip())
+
         return True
 
     def find_header_by_name(self, parser : bs4.BeautifulSoup, name : str) -> Optional[bs4.Tag] :
@@ -293,8 +296,8 @@ class YeastScraper(BaseScraper[Yeast]) :
             return None
         return header[0]
 
-    def parse_numeric_range(self, td : bs4.Tag, range : NumericRange, unit_char : str = "%") -> bool :
-        values = td.contents[0].text.rstrip(unit_char).split("-")
+    def parse_numeric_range(self, node : bs4.Tag, range : NumericRange, unit_char : str = "%") -> bool :
+        values = node.contents[0].text.rstrip(unit_char).split("-")
 
         if len(values) < 1 or len(values) > 2:
             return False
@@ -315,6 +318,9 @@ class YeastScraper(BaseScraper[Yeast]) :
     def parse_percentage_value(self, td : bs4.Tag, range : NumericRange) -> bool :
         return self.parse_numeric_range(td, range, "%")
 
+    def farenheit_to_degrees(self, farenheit : float) -> float :
+        return (farenheit - 32) * 5/9
+
     def parse_brewing_properties(self, parser : bs4.BeautifulSoup, yeast : Yeast, error_list : list[str]) -> bool :
         table = parser.find("table", attrs={"class" : "brewvalues"})
         if not table :
@@ -330,105 +336,47 @@ class YeastScraper(BaseScraper[Yeast]) :
                 continue
 
             text = th.contents[0].text
+            value_node : Optional[bs4.Tag] = td.find("small", attrs={"class" : "text-muted bold"}) #type: ignore
+            if value_node == None :
+                continue
+
             if  "Alcohol Tolerance" in text :
-                value = text
+                value = value_node.text.replace("%", "")
                 if "Unknown" == value :
                     yeast.add_parsing_error("No available values for alcohol tolerance.")
+                elif "-" in value:
+                    yeast.add_parsing_error(f"Caught wrong format for alcohol tolerance : {value}.Trying to cope with it.")
+                else:
+                    try:
+                        yeast.alcohol_tolerance = float(value)
+                    except :
+                        yeast.add_parsing_error(f"Cannot convert value to float : {value}")
 
-                if not self.parse_percentage_value(td, Yeast.alpha_acids) :
-                    error_list.append("Caught unexpected content for Alpha acids")
-                continue
+            elif  "Attenuation" in text:
+                value = value_node.text.replace("%", "")
+                if "Unknown" == value :
+                    yeast.add_parsing_error("No available values for attenuation.")
+                else :
+                    if not self.parse_percentage_value(value_node, yeast.attenuation):
+                        error_list.append("Caught unexpected content for attenutation")
 
-            if  "Beta Acid %" in text:
-                if not self.parse_percentage_value(td, Yeast.beta_acids):
-                    error_list.append("Caught unexpected content for Beta acids")
-                continue
+            elif "Flocculation" in text:
+                yeast.flocculation = value_node.text
 
-            if  "Alpha-Beta Ratio" in text:
-                values = td.contents[0].text.split("-")
-                if len(values) < 1 or len(values) > 2 :
-                    error_list.append("Caught unexpected content for Beta acids")
+            elif "Optimal Temperature" in text:
+                if not self.parse_numeric_range(value_node, yeast.optimal_temperature, "° F") :
+                    error_list.append("Caught unexpected content for optimal temperatures")
                     continue
-                Yeast.alpha_beta_ratio.min.value = values[0].strip()
-                Yeast.alpha_beta_ratio.max.value = values[1].strip()
-                continue
-
-            if  "Yeast Storage Index (HSI)" in text:
-                values = td.contents[0].text.split("%")
-                Yeast.Yeast_storage_index = float(values[0].strip())
-                continue
-
-            if  "Co-Humulone as % of Alpha" in text:
-                if not self.parse_percentage_value(td, Yeast.co_humulone_normalized) :
-                    error_list.append("Caught unexpected content for Co-humulone")
-                continue
-
-            if "Total Oils (mL/100g)" in text :
-                if not self.parse_numeric_range(td, Yeast.total_oils, "mL") :
-                    error_list.append("Caught invalid format for total oils")
-                continue
-
-            if "Myrcene" in text:
-                if not self.parse_percentage_value(td, Yeast.myrcene):
-                    error_list.append("Caught invalid format for Myrcene")
-                continue
-
-            if "Humulene" in text:
-                if not self.parse_percentage_value(td, Yeast.humulene):
-                    error_list.append("Caught invalid format for Humulene")
-                continue
-
-            if "Caryophyllene" in text:
-                if not self.parse_percentage_value(td, Yeast.caryophyllene):
-                    error_list.append("Caught invalid format for Caryophyllene")
-                continue
-
-            if "Farnesene" in text:
-                if not self.parse_percentage_value(td, Yeast.farnesene):
-                    error_list.append("Caught invalid format for Farnesene")
-                continue
-
-            if "All Others" in text:
-                if not self.parse_percentage_value(td, Yeast.other_oils) :
-                    error_list.append("Caught invalid format for other oils")
-                continue
-
+                yeast.optimal_temperature.max.value = round(self.farenheit_to_degrees(yeast.optimal_temperature.max.value))
+                yeast.optimal_temperature.min.value = round(self.farenheit_to_degrees(yeast.optimal_temperature.min.value))
 
         return True
 
-    def parse_flavor_and_aroma_section(self, parser : bs4.BeautifulSoup, Yeast : Yeast, error_list : list[str]) -> bool :
-        header_name = "Flavor & Aroma Profile"
+    def is_readmore_node(self, tag : bs4.Tag) -> bool:
+        if "class" in tag.attrs and "readmore" in tag.attrs["class"] :
+            return True
+        return False
 
-        header = self.find_header_by_name(parser, header_name)
-        if not header :
-            error_list.append(f"Could not find {header_name} header")
-            return False
-
-        # Listing nodes until finding the next Header
-        # because sometimes the Tags node can't be found (on old varieties)
-        nodes_to_inspect : list[bs4.Tag] = []
-        next_node : bs4.Tag = header.find_next_sibling()     #type: ignore
-        while next_node != None and next_node.name != "h2" : #type: ignore
-            if next_node.name == "p" :
-                nodes_to_inspect.append(next_node)
-            next_node = next_node.find_next_sibling()        #type: ignore
-
-        for p_node in nodes_to_inspect :
-            # Found tags !
-            if "Tags:" in p_node.text :
-                tags_node = p_node.find("em")
-                if not tags_node :
-                    error_list.append(f"No tags found on Yeast {Yeast.name}")
-                    return False
-                tags : bs4.ResultSet[bs4.PageElement] = tags_node.find_all("a", attrs={"class": "text-muted"}) #type: ignore
-                for tag in tags :                                   #type: ignore
-                    Yeast.tags.append(tag.text.replace("#", ""))      #type: ignore
-                break
-
-            Yeast.flavor_txt += p_node.text + " "
-        Yeast.flavor_txt = self.format_text(Yeast.flavor_txt)
-
-        return True
 
     def parse_description_section(self, parser : bs4.BeautifulSoup, yeast : Yeast, error_list : list[str]) -> bool :
         header_name = "Description"
@@ -437,23 +385,21 @@ class YeastScraper(BaseScraper[Yeast]) :
             error_list.append(f"Could not find {header_name} header")
             return False
 
-        nodes_list : list[bs4.Tag] =[]
-        next_node : bs4.Tag = header.find_next_sibling() #type: ignore
-        while next_node.name != "h2" :
-            if next_node.name == "p" or next_node.find("strong") != None:
-                nodes_list.append(next_node)
-            next_node = next_node.find_next_sibling() #type: ignore
+        description_node : bs4.Tag = header.find_next_sibling("p") #type: ignore
+        yeast.description = self.format_text(description_node.text)
 
-        for node in nodes_list :
-            tags_node = node.find("strong")
-            if tags_node != None :
-                tags = tags_node.text.replace("#", "").replace("\xa0", "").strip().split()
-                for tag in tags :
-                    yeast.tags.append(tag.strip())
-            else :
-                yeast.description += node.text + " "
-        yeast.description = self.format_text(yeast.description)
+        tags_node : bs4.Tag = description_node.find_next_sibling("p") #type: ignore
+        if self.is_readmore_node(tags_node):
+            tags_node = tags_node.find_next_sibling("p") #type: ignore
+        tags_strong_node : Optional[bs4.Tag] = tags_node.find("strong") #type: ignore
 
+        # No tags here
+        if tags_strong_node == None :
+            return False
+
+        tags :list[str] = tags_strong_node.text.replace("#", "").replace("\xa0", "").strip().split()
+        for tag in tags :
+            yeast.tags.append(tag.strip())
 
         return True
 

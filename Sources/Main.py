@@ -8,7 +8,6 @@ import requests
 from bs4 import BeautifulSoup
 import asyncio
 from typing import Any
-from .BaseScraper import ItemPair
 
 from .Models.Hop import Hop
 from .Models.Yeast import Yeast
@@ -96,7 +95,7 @@ def write_hops_json_to_disk(filepath : Path, hops : list[Hop]):
         json.dump(json_content, file, indent=4)
 
 
-def scrap_yeasts_from_website(yeast_links : list[str], scraper : YeastScraper, multi_threaded : bool = False, max_jobs : int = -1) -> list[ItemPair[Yeast]] :
+def scrap_yeasts_from_website(yeast_links : list[str], scraper : YeastScraper, multi_threaded : bool = False, max_jobs : int = -1) -> list[Yeast] :
     # Seems like running Tasks or threads is roughly equivalent in terms of performances
     # Takes roughly 11-15 seconds for 318 yeasts with 40 - 100 tasks/threads
     if multi_threaded :
@@ -107,31 +106,30 @@ def scrap_yeasts_from_website(yeast_links : list[str], scraper : YeastScraper, m
         result = asyncio.run(scraper.scrap_async(yeast_links, max_jobs))
         if not result :
             print("Whoops")
+    return scraper.yeasts
 
-    yeasts_pair = scraper.ok_items
-    return yeasts_pair
-
-def read_yeasts_from_cache(filepath : Path) -> list[ItemPair[Yeast]] :
-    yeasts : list[ItemPair[Yeast]] = []
+def read_yeasts_from_cache(filepath : Path) -> list[Yeast] :
+    yeasts : list[Yeast] = []
     if filepath.exists():
         with open(filepath, 'r') as file :
             content = json.load(file)
 
             for parsed in content["yeasts"] :
                 new_yeast = Yeast()
-                new_yeast.from_json(parsed["yeast"])
-                new_pair = ItemPair(new_yeast, errors=parsed["warnings"])
-                yeasts.append(new_pair)
+                new_yeast.from_json(parsed)
+                yeasts.append(new_yeast)
     return yeasts
 
-def write_yeasts_json_to_disk(filepath : Path, yeasts : list[ItemPair[Yeast]]):
-    yeasts_json : list[dict[str, Any]] = []
+def write_yeasts_json_to_disk(filepath : Path, yeasts : list[Yeast]):
+    yeasts_list : list[dict[str, Any]] = []
     for yeast in yeasts :
-        out_dict = {
-            "yeast" : yeast.item.to_json(),
-            "warnings" : yeast.errors
-        }
-        yeasts_json.append(out_dict)
+        yeasts_list.append(yeast.to_json())
+    json_content = {
+        "yeasts" : yeasts_list
+    }
+
+    with open(filepath, "w") as file :
+        json.dump(json_content, file, indent=4)
 
 async def instantiate_aiohttp_client_async() -> aiohttp.ClientSession :
     return aiohttp.ClientSession()
@@ -191,15 +189,12 @@ def main(args : list[str]):
     yeasts_filepath = Directories.CACHE_DIR.joinpath("yeasts.json")
     yeasts = read_yeasts_from_cache(yeasts_filepath)
     for yeast in yeasts :
-        yeast_links.remove(yeast.item.link)
+        yeast_links.remove(yeast.link)
 
     # Only scrap what's necessary to limit load of the server
     if len(yeast_links) > 0 :
-        old_max_jobs = max_jobs
-        max_jobs = 1
         scraped_yeasts = scrap_yeasts_from_website(yeast_links, yeast_scraper, max_jobs=max_jobs)
         yeasts += scraped_yeasts
-        max_jobs = old_max_jobs
     write_yeasts_json_to_disk(yeasts_filepath, yeasts)
 
 
