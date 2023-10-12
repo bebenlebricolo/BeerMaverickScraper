@@ -17,9 +17,6 @@ from .Utils import parallel
 class HopScraper(BaseScraper[Hop]) :
     hops : list[Hop]
     error_items : list[ItemPair[str]]
-    ok_items : list[ItemPair[Hop]]
-
-    requested_parallel_jobs : int = 1
 
     def __init__(self, async_client: Optional[aiohttp.ClientSession] = None,
                  request_client: Optional[requests.Session] = None) :
@@ -38,8 +35,6 @@ class HopScraper(BaseScraper[Hop]) :
             self.request_client = requests.Session()
 
         matrix = parallel.spread_load_for_parallel(links, num_threads)
-        self.requested_parallel_jobs = len(matrix)
-
         if num_threads == 1 :
             start = datetime.datetime.now()
             print(f"Retrieving hops, running synchronously. Starting at : {self.get_formatted_time()}")
@@ -58,12 +53,18 @@ class HopScraper(BaseScraper[Hop]) :
             print(f"Total execution time : {self.get_duration_formatted(start)}")
             return True
 
-        error_item_collection : list[list[ItemPair[Hop]]] = []
-        output_item_collection : list[list[ItemPair[Hop]]] = []
+        error_item_collection : list[list[Hop]] = []
+        output_item_collection : list[list[Hop]] = []
 
         print(f"Spawning {num_threads} new threads ...")
         thread_list : list[Thread] = []
         for sublist in matrix :
+            # Empty list happen when we request e.g. 40 concurrent tasks but we only have 20 items to scrap
+            # -> Some tasks have nothing to do ! So skip them.
+            # Note : a break instruction might have done it here, but that only works on the assumption that empty lists are contiguous and the last
+            # ones of the matrix. It's probably always true, but a continue does it just as well and takes care of unordered lists whereas the break does not.
+            if len(sublist) == 0:
+                continue
 
             # Prepare output data lists and store them in both collections
             error_item_list = []
@@ -90,17 +91,15 @@ class HopScraper(BaseScraper[Hop]) :
 
         print(f"All threads returned, time : {self.get_duration_formatted(start_time)}")
 
-        # Flattening returned items yeast collection
-        self.ok_items : list[ItemPair[Hop]] = [item for sublist in output_item_collection for item in sublist]
+         # Flattening returned items yeast collection
+        self.hops : list[Hop] = [item for sublist in output_item_collection for item in sublist]
         self.error_items = [item for sublist in error_item_collection for item in sublist] #type: ignore
-        self.hops = [pair.item for pair in self.ok_items]
-        warnings = [error for item in self.ok_items for error in item.errors ]
 
         # Alert for errors
         if len(self.error_items) > 0 :
             print("Caught some errors while retrieving data from website : error list is not empty !")
 
-        if len(warnings) > 0 :
+        if self.has_warnings(self.hops) :
             print("Caught some non critical errors (warnings) while retrieving data from website.")
 
         print(f"Retrieved hops from website ! Finished at {self.get_formatted_time()}")
@@ -115,8 +114,6 @@ class HopScraper(BaseScraper[Hop]) :
             self.async_client = aiohttp.ClientSession()
 
         matrix = parallel.spread_load_for_parallel(links, num_tasks)
-        self.requested_parallel_jobs = len(matrix)
-
         if num_tasks == 1 :
             start = datetime.datetime.now()
             print(f"Retrieving hops, running synchronously. Starting at : {self.get_formatted_time()}")
@@ -135,13 +132,19 @@ class HopScraper(BaseScraper[Hop]) :
             print(f"Total execution time : {self.get_duration_formatted(start)}")
             return True
 
-        error_item_collection : list[list[ItemPair[Hop]]] = []
-        output_item_collection : list[list[ItemPair[Hop]]] = []
+        error_item_collection : list[list[Hop]] = []
+        output_item_collection : list[list[Hop]] = []
 
         print(f"Spawning {num_tasks} new async tasks ...")
         start_time = datetime.datetime.now()
         async with asyncio.TaskGroup() as tg :
             for sublist in matrix :
+                # Empty list happen when we request e.g. 40 concurrent tasks but we only have 20 items to scrap
+                # -> Some tasks have nothing to do ! So skip them.
+                # Note : a break instruction might have done it here, but that only works on the assumption that empty lists are contiguous and the last
+                # ones of the matrix. It's probably always true, but a continue does it just as well and takes care of unordered lists whereas the break does not.
+                if len(sublist) == 0:
+                    continue
 
                 # Prepare output data lists and store them in both collections
                 error_item_list = []
@@ -157,16 +160,15 @@ class HopScraper(BaseScraper[Hop]) :
         print(f"All tasks returned, time : {self.get_duration_formatted(start_time)}")
 
         # Flattening returned items yeast collection
-        self.ok_items : list[ItemPair[Hop]] = [item for sublist in output_item_collection for item in sublist]
+        self.hops : list[Hop] = [item for sublist in output_item_collection for item in sublist]
         self.error_items = [item for sublist in error_item_collection for item in sublist] #type: ignore
-        self.hops = [pair.item for pair in self.ok_items]
-        warnings = [error for item in self.ok_items for error in item.errors ]
+
 
         # Alert for errors
         if len(self.error_items) > 0 :
             print("Caught some errors while retrieving data from website : error list is not empty !")
 
-        if len(warnings) > 0 :
+        if self.has_warnings(self.hops) :
             print("Caught some non critical errors (warnings) while retrieving data from website.")
 
         print(f"Retrieved hops from website ! Finished at {self.get_formatted_time()}")
@@ -174,87 +176,91 @@ class HopScraper(BaseScraper[Hop]) :
 
         return True
 
-    async def atomic_scrap_async(self, links: list[str], out_error_item_list : list[ItemPair[Hop]], out_item_list : list[ItemPair[Hop]]) -> None:
+    def has_warnings(self, hops : list[Hop]) -> bool:
+        for hop in hops :
+            if hop.parsing_errors != None :
+                return True
+        return False
+
+    async def atomic_scrap_async(self, links: list[str], out_error_item_list : list[Hop], out_item_list : list[Hop]) -> None:
         """Atomic function used by asynchronous executers (asyncio runner).
            Returns two output lists :
            * out_error_item_list : list of rejected objects (caused by a hard issue, like http connection failing/etc)
            * out_item_list : list of item that could be parsed. Check for the internal error list to see non-critical parsing warnings"""
         for link in links :
-            error_list : list[str] = []
-
-            new_hop = Hop(orig_link=link)
+            new_hop = Hop(link=link)
 
             # Critical error, reject data
             response = await self.async_client.get(link) #type: ignore
             if response.status != 200 :
-                out_error_item_list.append(ItemPair(item=new_hop, errors=[str(response)]))
+                new_hop.add_parsing_error(str(response))
+                out_error_item_list.append(new_hop)
                 continue
 
             try:
                 parser = bs4.BeautifulSoup(await response.content.read(), "html.parser")
-                self.parse_hop_item_from_page(parser, new_hop, error_list)
-                out_item_list.append(ItemPair(item=new_hop, errors=error_list))
+                self.parse_hop_item_from_page(parser, new_hop)
+                out_item_list.append(new_hop)
 
             except : # Exception as e :
-                out_error_item_list.append(ItemPair(item=new_hop, errors=error_list))
+                out_error_item_list.append(new_hop)
                 traceback.print_exc()
 
-    def atomic_scrap(self, links: list[str], out_error_item_list : list[ItemPair[Hop]], out_item_list : list[ItemPair[Hop]]) -> None:
+    def atomic_scrap(self, links: list[str], out_error_item_list : list[Hop], out_item_list : list[Hop]) -> None:
         """Atomic function used by asynchronous executers (threads).
            Returns two output lists :
            * out_error_item_list : list of rejected objects (caused by a hard issue, like http connection failing/etc)
            * out_item_list : list of item that could be parsed. Check for the internal error list to see non-critical parsing warnings"""
         for link in links :
-            error_list : list[str] = []
-
-            new_hop = Hop(orig_link=link)
+            new_hop = Hop(link=link)
 
             # Critical error, reject data
             response = self.request_client.get(link) #type: ignore
             if response.status_code != 200 :
-                out_error_item_list.append(ItemPair(item=new_hop, errors=[str(response)]))
+                new_hop.add_parsing_error(str(response))
+                out_error_item_list.append(new_hop)
                 continue
 
             try:
                 parser = bs4.BeautifulSoup(response.content, "html.parser")
-                self.parse_hop_item_from_page(parser, new_hop, error_list)
-                out_item_list.append(ItemPair(item=new_hop, errors=error_list))
+                self.parse_hop_item_from_page(parser, new_hop)
+                out_item_list.append(new_hop)
 
             except : # Exception as e :
-                out_error_item_list.append(ItemPair(item=new_hop, errors=error_list))
+                out_error_item_list.append(new_hop)
                 traceback.print_exc()
 
-    def parse_hop_item_from_page(self, parser : bs4.BeautifulSoup, hop : Hop, error_list : list[str]) -> None :
+    def parse_hop_item_from_page(self, parser : bs4.BeautifulSoup, hop : Hop) -> None :
         name_node = parser.find("h1", attrs={"class" : "entry-title"})
         if not name_node:
-            error_list.append(f"Could not retrieve hop name for link {hop.orig_link}")
+            hop.add_parsing_error(f"Could not retrieve hop name for link {hop.link}")
             # retrieving name from the link itself
-            hop.name = hop.orig_link.split("/")[-1]
+            hop.name = hop.link.split("/")[-1]
         else:
             hop.name = self.format_text(name_node.text)
 
         success = True
-        success &= self.parse_basics_section(parser, hop, error_list)
-        success &= self.parse_origin_section(parser, hop, error_list)
-        success &= self.parse_flavor_and_aroma_section(parser, hop, error_list)
-        success &= self.parse_brewing_values(parser, hop, error_list)
-        success &= self.parse_beer_style(parser, hop, error_list)
-        success &= self.parse_hop_substitution(parser, hop, error_list)
+        success &= self.parse_basics_section(parser, hop)
+        success &= self.parse_origin_section(parser, hop)
+        success &= self.parse_flavor_and_aroma_section(parser, hop)
+        success &= self.parse_brewing_values(parser, hop)
+        success &= self.parse_beer_style(parser, hop)
+        success &= self.parse_hop_substitution(parser, hop)
 
         if not success :
-            error_list.append("Some parts of this Hop failed to be read")
+            hop.add_parsing_error("Some parts of this Hop failed to be read")
 
-    def parse_hop_substitution(self, parser : bs4.BeautifulSoup, hop : Hop, error_list : list[str]) -> bool :
+    def parse_hop_substitution(self, parser : bs4.BeautifulSoup, hop : Hop) -> bool :
         header_name = "Hop Substitutions"
         header = self.find_header_by_name(parser, header_name)
         if not header :
-            error_list.append(f"Could not find {header_name} header")
+            hop.add_parsing_error(f"Could not find {header_name} header")
             return False
 
         p_node : bs4.ResultSet[bs4.PageElement] = header.find_all_next("p")
         experienced_brewer_node : list[bs4.PageElement] = [x for x in p_node if "Experienced brewers have chosen the following hop" in x.text] # type: ignore
         if not experienced_brewer_node :
-            error_list.append("Could not isolate substitution list")
+            hop.add_parsing_error("Could not isolate substitution list")
             return False
         experienced_brewer_node : bs4.PageElement = experienced_brewer_node[0] #type: ignore
 
@@ -266,11 +272,11 @@ class HopScraper(BaseScraper[Hop]) :
 
         return True
 
-    def parse_beer_style(self, parser : bs4.BeautifulSoup, hop : Hop, error_list : list[str]) -> bool :
+    def parse_beer_style(self, parser : bs4.BeautifulSoup, hop : Hop) -> bool :
         header_name = "Beer Styles"
         header = self.find_header_by_name(parser, header_name)
         if not header :
-            error_list.append(f"Could not find {header_name} header")
+            hop.add_parsing_error(f"Could not find {header_name} header")
             return False
 
         style_node = header.find_next_sibling("p")
@@ -310,10 +316,10 @@ class HopScraper(BaseScraper[Hop]) :
     def parse_percentage_value(self, td : bs4.Tag, range : NumericRange) -> bool :
         return self.parse_numeric_range(td, range, "%")
 
-    def parse_brewing_values(self, parser : bs4.BeautifulSoup, hop : Hop, error_list : list[str]) -> bool :
+    def parse_brewing_values(self, parser : bs4.BeautifulSoup, hop : Hop) -> bool :
         table = parser.find("table", attrs={"class" : "brewvalues"})
         if not table :
-            error_list.append("Could not parse brewing values")
+            hop.add_parsing_error("Could not parse brewing values")
             return False
 
         tr_nodes :list[bs4.Tag] = table.find_all("tr") #type: ignore
@@ -326,18 +332,18 @@ class HopScraper(BaseScraper[Hop]) :
 
             if  "Alpha Acid % (AA)" in th.contents[0].text:
                 if not self.parse_percentage_value(td, hop.alpha_acids) :
-                    error_list.append("Caught unexpected content for Alpha acids")
+                    hop.add_parsing_error("Caught unexpected content for Alpha acids")
                 continue
 
             if  "Beta Acid %" in th.contents[0].text:
                 if not self.parse_percentage_value(td, hop.beta_acids):
-                    error_list.append("Caught unexpected content for Beta acids")
+                    hop.add_parsing_error("Caught unexpected content for Beta acids")
                 continue
 
             if  "Alpha-Beta Ratio" in th.contents[0].text:
                 values = td.contents[0].text.split("-")
                 if len(values) < 1 or len(values) > 2 :
-                    error_list.append("Caught unexpected content for Beta acids")
+                    hop.add_parsing_error("Caught unexpected content for Beta acids")
                     continue
                 hop.alpha_beta_ratio.min.value = values[0].strip()
                 hop.alpha_beta_ratio.max.value = values[1].strip()
@@ -350,48 +356,48 @@ class HopScraper(BaseScraper[Hop]) :
 
             if  "Co-Humulone as % of Alpha" in th.contents[0].text:
                 if not self.parse_percentage_value(td, hop.co_humulone_normalized) :
-                    error_list.append("Caught unexpected content for Co-humulone")
+                    hop.add_parsing_error("Caught unexpected content for Co-humulone")
                 continue
 
             if "Total Oils (mL/100g)" in th.contents[0].text :
                 if not self.parse_numeric_range(td, hop.total_oils, "mL") :
-                    error_list.append("Caught invalid format for total oils")
+                    hop.add_parsing_error("Caught invalid format for total oils")
                 continue
 
             if "Myrcene" in th.contents[0].text:
                 if not self.parse_percentage_value(td, hop.myrcene):
-                    error_list.append("Caught invalid format for Myrcene")
+                    hop.add_parsing_error("Caught invalid format for Myrcene")
                 continue
 
             if "Humulene" in th.contents[0].text:
                 if not self.parse_percentage_value(td, hop.humulene):
-                    error_list.append("Caught invalid format for Humulene")
+                    hop.add_parsing_error("Caught invalid format for Humulene")
                 continue
 
             if "Caryophyllene" in th.contents[0].text:
                 if not self.parse_percentage_value(td, hop.caryophyllene):
-                    error_list.append("Caught invalid format for Caryophyllene")
+                    hop.add_parsing_error("Caught invalid format for Caryophyllene")
                 continue
 
             if "Farnesene" in th.contents[0].text:
                 if not self.parse_percentage_value(td, hop.farnesene):
-                    error_list.append("Caught invalid format for Farnesene")
+                    hop.add_parsing_error("Caught invalid format for Farnesene")
                 continue
 
             if "All Others" in th.contents[0].text:
                 if not self.parse_percentage_value(td, hop.other_oils) :
-                    error_list.append("Caught invalid format for other oils")
+                    hop.add_parsing_error("Caught invalid format for other oils")
                 continue
 
 
         return True
 
-    def parse_flavor_and_aroma_section(self, parser : bs4.BeautifulSoup, hop : Hop, error_list : list[str]) -> bool :
+    def parse_flavor_and_aroma_section(self, parser : bs4.BeautifulSoup, hop : Hop) -> bool :
         header_name = "Flavor & Aroma Profile"
 
         header = self.find_header_by_name(parser, header_name)
         if not header :
-            error_list.append(f"Could not find {header_name} header")
+            hop.add_parsing_error(f"Could not find {header_name} header")
             return False
 
         # Listing nodes until finding the next Header
@@ -408,7 +414,7 @@ class HopScraper(BaseScraper[Hop]) :
             if "Tags:" in p_node.text :
                 tags_node = p_node.find("em")
                 if not tags_node :
-                    error_list.append(f"No tags found on hop {hop.name}")
+                    hop.add_parsing_error(f"No tags found on hop {hop.name}")
                     return False
                 tags : bs4.ResultSet[bs4.PageElement] = tags_node.find_all("a", attrs={"class": "text-muted"}) #type: ignore
                 for tag in tags :                                   #type: ignore
@@ -420,11 +426,11 @@ class HopScraper(BaseScraper[Hop]) :
 
         return True
 
-    def parse_origin_section(self, parser : bs4.BeautifulSoup, hop : Hop, error_list : list[str]) -> bool :
+    def parse_origin_section(self, parser : bs4.BeautifulSoup, hop : Hop) -> bool :
         header_name = "Origin"
         header = self.find_header_by_name(parser, header_name)
         if not header :
-            error_list.append(f"Could not find {header_name} header")
+            hop.add_parsing_error(f"Could not find {header_name} header")
             return False
 
         nodes_list : list[bs4.Tag] =[]
@@ -441,7 +447,7 @@ class HopScraper(BaseScraper[Hop]) :
 
         return True
 
-    def parse_basics_section(self, parser : bs4.BeautifulSoup, hop : Hop, error_list : list[str]) -> bool :
+    def parse_basics_section(self, parser : bs4.BeautifulSoup, hop : Hop) -> bool :
         all_th : list[bs4.Tag] = parser.find_all("th")
         required = [
             "Purpose:",

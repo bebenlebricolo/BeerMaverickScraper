@@ -1,11 +1,11 @@
 #!/usr/bin/python3
 
 from enum import Enum
-from dataclasses import field
-from typing import cast
+from dataclasses import field, dataclass
+from typing import cast, Any
 
 from .Ranges import RatioRange, NumericRange
-from .Jsonable import *
+from .ScapedObject import ScrapedObject
 
 class HopAttribute(Enum) :
     Bittering = "Bittering"
@@ -29,10 +29,10 @@ def hop_attribute_from_str(input : str) -> HopAttribute :
 
 
 @dataclass
-class Hop(Jsonable) :
+class Hop(ScrapedObject) :
     # Basic characteristics
     name : str = field(default_factory=str)
-    orig_link : str = field(default_factory=str)
+    link : str = field(default_factory=str)
     purpose : HopAttribute = HopAttribute.Bittering
     country : str = field(default_factory=str)
     international_code : str = field(default_factory=str)
@@ -65,15 +65,16 @@ class Hop(Jsonable) :
     # For now this will do, especially if there is no name conflict.
     substitutes : list[str] = field(default_factory=list)
 
-
     def __eq__(self, other: object) -> bool:
+
         if type(self) != type(other) :
             return False
         other = cast(Hop, other)
         self = cast(Hop, self)
         identical = True
+        identical &= super().__eq__(other)
         identical &= self.name ==  other.name
-        identical &= self.orig_link == other.orig_link
+        identical &= self.link == other.link
         identical &= self.purpose == other.purpose
         identical &= self.country == other.country
         identical &= self.international_code == other.international_code
@@ -98,9 +99,9 @@ class Hop(Jsonable) :
         return identical
 
     def to_json(self) -> dict[str, Any] :
-        return {
+        content = {
             "name" : self.name,
-            "origLink" : self.orig_link,
+            "link" : self.link,
             "purpose" : self.purpose.value,
             "country" : self.country,
             "internationalCode" : self.international_code,
@@ -123,9 +124,15 @@ class Hop(Jsonable) :
             "substitutes" : self.substitutes
         }
 
+        # Doing the parent at the end as it only contains the parsingErrors that we want to go to the end of the object
+        content.update(super().to_json())
+        return content
+
     def from_json(self, content : dict[str, Any]) -> None :
+        super().from_json(content)
+
         self.name = self._read_prop("name", content, "")
-        self.orig_link = self._read_prop("origLink", content, "")
+        self.link = self._read_prop("link", content, "")
         self.purpose = hop_attribute_from_str(self._read_prop("purpose", content, ""))
         self.country = self._read_prop("country", content, "")
         self.international_code = self._read_prop("internationalCode", content, "")
@@ -146,6 +153,3 @@ class Hop(Jsonable) :
         self.other_oils.from_json(content["otherOils"])
         self.beer_styles = self._read_prop("beerStyles", content, [])
         self.substitutes = self._read_prop("substitutes", content, [])
-
-
-

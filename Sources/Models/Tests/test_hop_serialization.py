@@ -6,7 +6,7 @@ class TestHopModelSerialization(unittest.TestCase):
     def test_hop_symmetric_json(self):
         hop = Hop()
         hop.name = "Test hop"
-        hop.orig_link = "https://beermaverick.com/hop/apollo/"
+        hop.link = "https://beermaverick.com/hop/apollo/"
         hop.purpose = HopAttribute.Aromatic
         hop.country = "don't know"
         hop.international_code = "maybe"

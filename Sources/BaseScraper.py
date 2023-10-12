@@ -29,14 +29,14 @@ class BaseScraper(Generic[T]) :
         return False
 
 
-    def atomic_scrap(self, links : list[str], out_error_item_list : list[ItemPair[T]], out_item_list : list[ItemPair[T]]) -> None :
+    def atomic_scrap(self, links : list[str], out_error_item_list : list[T], out_item_list : list[T]) -> None :
         """Atomic function used by asynchronous executers (threads).
            Returns two output lists :
            * out_error_item_list : list of rejected objects (caused by a hard issue, like http connection failing/etc)
            * out_item_list : list of item that could be parsed. Check for the internal error list to see non-critical parsing warnings"""
         return
 
-    async def atomic_scrap_async(self, links : list[str], out_error_item_list : list[ItemPair[T]], out_item_list : list[ItemPair[T]]) -> None :
+    async def atomic_scrap_async(self, links : list[str], out_error_item_list : list[T], out_item_list : list[T]) -> None :
         """Atomic function used by asynchronous executers (asyncio tasks runners).
            Returns two output lists :
            * out_error_item_list : list of rejected objects (caused by a hard issue, like http connection failing/etc)

@@ -2,14 +2,21 @@
 import sys
 import json
 from pathlib import Path
+import aiohttp
 
 import requests
 from bs4 import BeautifulSoup
 import asyncio
 from typing import Any
+from .BaseScraper import ItemPair
+
+from .Models.Hop import Hop
+from .Models.Yeast import Yeast
+# from .Models import Water
+# from .Models import Fermentable
 
 from .HopScraper import HopScraper
-#from .YeastScraper import YeastPageParser
+from .YeastScraper import YeastScraper
 #from .FermentableScraper import FermentablePageScrapper
 
 class Directories :
@@ -51,9 +58,86 @@ def read_links_from_cache(filepath: Path) -> list[str]:
 
     return links
 
+def scrap_hops_from_website(hop_links : list[str], scraper : HopScraper, multi_threaded : bool = False, max_jobs : int = -1) -> list[Hop] :
+    # Seems like running Tasks or threads is roughly equivalent in terms of performances
+    # Takes roughly 11-15 seconds for 318 hops with 40 - 100 tasks/threads
+    if multi_threaded :
+        result = scraper.scrap(hop_links, max_jobs)
+        if not result :
+            print("Whoops")
+    else :
+        result = asyncio.run(scraper.scrap_async(hop_links, max_jobs))
+        if not result :
+            print("Whoops")
+
+    return scraper.hops
+
+def read_hops_from_cache(filepath : Path) -> list[Hop] :
+    hops : list[Hop] = []
+    if filepath.exists():
+        with open(filepath, 'r') as file :
+            content = json.load(file)
+
+            for parsed in content["hops"] :
+                new_hop = Hop()
+                new_hop.from_json(parsed)
+                hops.append(new_hop)
+    return hops
+
+def write_hops_json_to_disk(filepath : Path, hops : list[Hop]):
+    hops_list : list[dict[str, Any]] = []
+    for hop in hops :
+        hops_list.append(hop.to_json())
+    json_content = {
+        "hops" : hops_list
+    }
+
+    with open(filepath, "w") as file :
+        json.dump(json_content, file, indent=4)
+
+
+def scrap_yeasts_from_website(yeast_links : list[str], scraper : YeastScraper, multi_threaded : bool = False, max_jobs : int = -1) -> list[ItemPair[Yeast]] :
+    # Seems like running Tasks or threads is roughly equivalent in terms of performances
+    # Takes roughly 11-15 seconds for 318 yeasts with 40 - 100 tasks/threads
+    if multi_threaded :
+        result = scraper.scrap(yeast_links, max_jobs)
+        if not result :
+            print("Whoops")
+    else :
+        result = asyncio.run(scraper.scrap_async(yeast_links, max_jobs))
+        if not result :
+            print("Whoops")
+
+    yeasts_pair = scraper.ok_items
+    return yeasts_pair
+
+def read_yeasts_from_cache(filepath : Path) -> list[ItemPair[Yeast]] :
+    yeasts : list[ItemPair[Yeast]] = []
+    if filepath.exists():
+        with open(filepath, 'r') as file :
+            content = json.load(file)
+
+            for parsed in content["yeasts"] :
+                new_yeast = Yeast()
+                new_yeast.from_json(parsed["yeast"])
+                new_pair = ItemPair(new_yeast, errors=parsed["warnings"])
+                yeasts.append(new_pair)
+    return yeasts
+
+def write_yeasts_json_to_disk(filepath : Path, yeasts : list[ItemPair[Yeast]]):
+    yeasts_json : list[dict[str, Any]] = []
+    for yeast in yeasts :
+        out_dict = {
+            "yeast" : yeast.item.to_json(),
+            "warnings" : yeast.errors
+        }
+        yeasts_json.append(out_dict)
+
+async def instantiate_aiohttp_client_async() -> aiohttp.ClientSession :
+    return aiohttp.ClientSession()
 
 def main(args : list[str]):
-    max_threads = int(args[1])
+    max_jobs = int(args[1])
 
     Directories.ensure_cache_directory_exists()
 
@@ -87,33 +171,38 @@ def main(args : list[str]):
             yeast_links.append(link)
             continue
 
+    sync_http_client = requests.Session()
+    hop_scraper = HopScraper(request_client=sync_http_client)
+    yeast_scraper = YeastScraper(request_client=sync_http_client)
 
-    hop_scrapper = HopScraper()
+    # Retrieving Hops from cache
+    hops_filepath = Directories.CACHE_DIR.joinpath("hops.json")
+    hops = read_hops_from_cache(hops_filepath)
+    for hop in hops :
+        hop_links.remove(hop.link)
 
-    # Seems like running Tasks or threads is roughly equivalent in terms of performances
-    # Takes roughly 11-15 seconds for 318 hops with 40 - 100 tasks/threads
-    run_threads = False
-    if run_threads :
-        result = hop_scrapper.scrap(hop_links, max_threads)
-        if not result :
-            print("Whoops")
-    else :
-        result = asyncio.run(hop_scrapper.scrap_async(hop_links, max_threads))
-        if not result :
-            print("Whoops")
+    # Only scrap what's necessary to limit load of the server
+    if len(hop_links) > 0 :
+        scraped_hops = scrap_hops_from_website(hop_links, hop_scraper, max_jobs=max_jobs)
+        hops += scraped_hops
+    write_hops_json_to_disk(hops_filepath, hops)
 
-    hops_pair = hop_scrapper.ok_items
-    hops_json : list[dict[str, Any]] = []
-    for hop in hops_pair :
-        out_dict = {
-            "hop" : hop.item.to_json(),
-            "warnings" : hop.errors
-        }
-        hops_json.append(out_dict)
+    # Retrieving Yeasts from cache
+    yeasts_filepath = Directories.CACHE_DIR.joinpath("yeasts.json")
+    yeasts = read_yeasts_from_cache(yeasts_filepath)
+    for yeast in yeasts :
+        yeast_links.remove(yeast.item.link)
 
-    Directories.ensure_cache_directory_exists()
-    with open(Directories.CACHE_DIR.joinpath("hops.json"), "w") as file :
-        json.dump({"hops" : hops_json}, file, indent=4)
+    # Only scrap what's necessary to limit load of the server
+    if len(yeast_links) > 0 :
+        old_max_jobs = max_jobs
+        max_jobs = 1
+        scraped_yeasts = scrap_yeasts_from_website(yeast_links, yeast_scraper, max_jobs=max_jobs)
+        yeasts += scraped_yeasts
+        max_jobs = old_max_jobs
+    write_yeasts_json_to_disk(yeasts_filepath, yeasts)
+
+
 
     return 0
 
