@@ -1,3 +1,4 @@
+import uuid
 import aiohttp
 import asyncio
 import requests
@@ -189,7 +190,7 @@ class HopScraper(BaseScraper[Hop]) :
            * out_error_item_list : list of rejected objects (caused by a hard issue, like http connection failing/etc)
            * out_item_list : list of item that could be parsed. Check for the internal error list to see non-critical parsing warnings"""
         for link in links :
-            new_hop = Hop(link=link)
+            new_hop = Hop(link=link, id=str(uuid.uuid4()))
 
             # Critical error, reject data
             response = await self.async_client.get(link) #type: ignore
@@ -231,7 +232,7 @@ class HopScraper(BaseScraper[Hop]) :
            * out_item_list : list of item that could be parsed. Check for the internal error list to see non-critical parsing warnings"""
         self.request_client = cast(requests.Session, self.request_client)
         for link in links :
-            new_hop = Hop(link=link)
+            new_hop = Hop(link=link, id=str(uuid.uuid4()))
 
             # Critical error, reject data
             response = self.request_client.get(link)
@@ -273,7 +274,7 @@ class HopScraper(BaseScraper[Hop]) :
             # retrieving name from the link itself
             hop.name = hop.link.split("/")[-1]
         else:
-            hop.name = self.format_text(name_node.text)
+            hop.name = self.format_text(name_node.text).replace(" Hop", "").strip()
 
         success = True
         success &= self.parse_basics_section(parser, hop)
@@ -325,7 +326,7 @@ class HopScraper(BaseScraper[Hop]) :
         # Styles seem to be consistently highlighted in bold text
         styles : list[bs4.Tag] = style_node.find_all("b") #type: ignore
         for style in styles :                             #type: ignore
-            hop.beer_styles.append(style.text)            #type: ignore
+            hop.beer_styles.append(style.text.strip())    #type: ignore
         return True
 
     def find_header_by_name(self, parser : bs4.BeautifulSoup, name : str) -> Optional[bs4.Tag] :

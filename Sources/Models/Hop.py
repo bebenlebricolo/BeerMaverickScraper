@@ -114,6 +114,7 @@ class Hop(ScrapedObject) :
         self = cast(Hop, self)
         identical = True
         identical &= super().__eq__(other)
+        identical &= self.id == other.id
         identical &= self.name ==  other.name
         identical &= self.link == other.link
         identical &= self.purpose == other.purpose
@@ -143,6 +144,7 @@ class Hop(ScrapedObject) :
     def to_json(self) -> dict[str, Any] :
         content = {
             "name" : self.name,
+            "id" : self.id,
             "link" : self.link,
             "purpose" : self.purpose.value,
             "country" : self.country,
@@ -175,6 +177,7 @@ class Hop(ScrapedObject) :
         super().from_json(content)
 
         self.name = self._read_prop("name", content, "")
+        self.id = self._read_prop("id", content, "")
         self.link = self._read_prop("link", content, "")
         self.purpose = hop_attribute_from_str(self._read_prop("purpose", content, ""))
         self.country = self._read_prop("country", content, "")

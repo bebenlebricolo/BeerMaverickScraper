@@ -1,7 +1,4 @@
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from aiohttp_retry import RetryClient, ExponentialRetry
-
+import uuid
 import requests
 import asyncio
 import aiohttp
@@ -201,7 +198,7 @@ class YeastScraper(BaseScraper[Yeast]) :
         for link in links :
             error_list : list[str] = []
 
-            new_yeast = Yeast(link=link)
+            new_yeast = Yeast(link=link, id=str(uuid.uuid4()))
 
             if monothread :
                 print(f"Parsing link : {link}")
@@ -272,7 +269,7 @@ class YeastScraper(BaseScraper[Yeast]) :
         for link in links :
             error_list : list[str] = []
 
-            new_yeast = Yeast(link=link)
+            new_yeast = Yeast(link=link, id=str(uuid.uuid4()))
 
             if monothread :
                 print(f"Parsing link : {link}")

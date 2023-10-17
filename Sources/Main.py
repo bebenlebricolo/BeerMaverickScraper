@@ -4,6 +4,7 @@ import sys
 import json
 from pathlib import Path
 import argparse
+import uuid
 
 import time
 import requests
@@ -74,7 +75,7 @@ def read_links_from_cache(filepath: Path) -> list[str]:
 
     return links
 
-def scrap_hops(hops_links : list[str], scraper : HopScraper, use_threads : bool = False, max_jobs : int = 0, force : bool = False):
+def scrap_hops(hops_links : list[str], scraper : HopScraper, use_threads : bool = False, max_jobs : int = 0, force : bool = False) -> list[Hop]:
     # Retrieving Hops from cache
     hops : list[Hop] = []
     hops_filepath = Directories.EXTRACTED_DIR.joinpath("hops.json")
@@ -99,6 +100,8 @@ def scrap_hops(hops_links : list[str], scraper : HopScraper, use_threads : bool 
 
     if max_jobs != 1 and len(hops_links) > 0:
         report_loop_thread.join() #type: ignore
+
+    return hops
 
 def _scrap_hops_from_website(hop_links : list[str], scraper : HopScraper, multi_threaded : bool = False, max_jobs : int = -1) -> list[Hop] :
     # Seems like running Tasks or threads is roughly equivalent in terms of performances
@@ -138,7 +141,7 @@ def write_hops_json_to_disk(filepath : Path, hops : list[Hop]):
         json.dump(json_content, file, indent=4)
 
 
-def scrap_yeasts(yeasts_links : list[str], scraper : YeastScraper, use_threads : bool = False, max_jobs : int = 0, force : bool = False) :
+def scrap_yeasts(yeasts_links : list[str], scraper : YeastScraper, use_threads : bool = False, max_jobs : int = 0, force : bool = False) -> list[Yeast]:
     # Retrieving Yeasts from cache
     yeasts : list[Yeast] = []
     yeasts_filepath = Directories.EXTRACTED_DIR.joinpath("yeasts.json")
@@ -163,6 +166,8 @@ def scrap_yeasts(yeasts_links : list[str], scraper : YeastScraper, use_threads :
 
     if max_jobs != 1 and len(yeasts_links) > 0:
         report_loop_thread.join() #type: ignore
+
+    return yeasts
 
 def _scrap_yeasts_from_website(yeast_links : list[str], scraper : YeastScraper, multi_threaded : bool = False, max_jobs : int = -1) -> list[Yeast] :
     # Seems like running Tasks or threads is roughly equivalent in terms of performances
@@ -313,7 +318,7 @@ def main(args : list[str]):
     ########################## Hops parsing ##########################
     ##################################################################
 
-    scrap_hops(categorized_links.hops, hop_scraper, use_threads, max_jobs, force)
+    hops =scrap_hops(categorized_links.hops, hop_scraper, use_threads, max_jobs, force)
 
     ##################################################################
     ######################## Yeasts parsing ##########################
@@ -321,7 +326,44 @@ def main(args : list[str]):
 
     # Share the session
     yeast_scraper.async_client = hop_scraper.async_client
-    scrap_yeasts(categorized_links.yeasts, yeast_scraper, use_threads, max_jobs, force)
+    yeasts = scrap_yeasts(categorized_links.yeasts, yeast_scraper, use_threads, max_jobs, force)
+
+
+    # Post process data
+    for hop in hops :
+        if hop.id == "" :
+            hop.id = str(uuid.uuid4())
+
+    for hop in hops :
+        for i in range(0, len(hop.substitutes)):
+            # Data originally contains a link that points to the substitute hop,
+            # we'll change that for its UUID instead, which is closer to what we'll find in a regular database
+            linked_hop = hop.substitutes[i]
+            target = [item for item in hops if item.link == linked_hop]
+            if len(target) != 0 :
+                hop.substitutes[i] = target[0].id
+
+    write_hops_json_to_disk(Directories.PROCESSED_DIR.joinpath("hops.json"), hops)
+
+    for yeast in yeasts :
+        if yeast.id == "" :
+            yeast.id = str(uuid.uuid4())
+
+    for yeast in yeasts :
+        for i in range(0, len(yeast.comparable_yeasts)):
+            # Data originally contains a link that points to the substitute hop,
+            # we'll change that for its UUID instead, which is closer to what we'll find in a regular database
+            linked_yeast = yeast.comparable_yeasts[i]
+            target = [item for item in yeasts if item.link == linked_yeast]
+            if len(target) != 0 :
+                yeast.comparable_yeasts[i] = target[0].id
+            else :
+                # We are stumbling on "bad" links : for some linked yeasts, there are issues with the website api calls and redirection did not work
+                # So we'll need to find a solution for that.
+                print(f"Yeast : \"{yeast.name}\" with link : {yeast.link} has issues in comparable yeasts : \"{linked_yeast}\"")
+
+    write_yeasts_json_to_disk(Directories.PROCESSED_DIR.joinpath("yeasts.json"), yeasts)
+
 
     return 0
 

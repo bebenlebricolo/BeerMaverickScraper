@@ -79,3 +79,4 @@ class BaseScraper(Generic[T]) :
         out = out.strip()
 
         return out
+

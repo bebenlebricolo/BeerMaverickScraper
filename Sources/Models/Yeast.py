@@ -3,10 +3,10 @@ from typing import Any, Optional
 
 from .Ranges import NumericRange
 from .Jsonable import *
-
+from .ScapedObject import ScrapedObject
 
 @dataclass
-class Yeast(Jsonable):
+class Yeast(ScrapedObject):
     name : str = field(default_factory=str)
     brand : str = field(default_factory=str)
     link : str = field(default_factory=str)
@@ -30,6 +30,7 @@ class Yeast(Jsonable):
 
     def from_json(self, content: dict[str, Any]) -> None:
         self.name = self._read_prop("name", content, "")
+        self.id = self._read_prop("id", content, "")
         self.brand = self._read_prop("brand", content, "")
         self.link = self._read_prop("link", content, "")
         self.type = self._read_prop("type", content, "")
@@ -63,6 +64,7 @@ class Yeast(Jsonable):
     def to_json(self) -> dict[str, Any]:
         content = {
             "name" : self.name,
+            "id" : self.id,
             "brand" : self.brand,
             "link" : self.link,
             "type" : self.type,
@@ -81,16 +83,12 @@ class Yeast(Jsonable):
         content.update(super().to_json())
         return content
 
-    def add_parsing_error(self, error : str) :
-        if self.parsing_errors == None :
-            self.parsing_errors = []
-        self.parsing_errors.append(error)
-
     def __eq__(self, other: object) -> bool:
         identical = super().__eq__(other)
         other = cast(Yeast, other)
         self = cast(Yeast, self)
         identical &= self.name == other.name
+        identical &= self.id == other.id
         identical &= self.brand == other.brand
         identical &= self.link == other.link
         identical &= self.type == other.type
