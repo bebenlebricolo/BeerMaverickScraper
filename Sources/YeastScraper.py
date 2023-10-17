@@ -20,7 +20,6 @@ from .Utils import parallel
 class YeastScraper(BaseScraper[Yeast]) :
     yeasts : list[Yeast]
     error_items : list[ItemPair[str]]
-    treated_item : int = 0
 
     def __init__(self, async_client: Optional[aiohttp.ClientSession] = None,
                  request_client: Optional[requests.Session] = None) :
@@ -28,24 +27,16 @@ class YeastScraper(BaseScraper[Yeast]) :
         self.reset()
 
     def reset(self) :
+        super().reset()
         self.yeasts = []
         self.error_items = []
-        self.treated_item = 0
+
 
     def scrap(self, links: list[str], num_threads: int = -1) -> bool:
         self.reset()
         if self.request_client == None :
             print("/!\\ Warning : no session found for synchronous http requests, creating a new one.")
             self.request_client = requests.Session()
-
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=0.1,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS"]
-        )
-        self.request_client.adapters.clear()
-        self.request_client.mount("https://", HTTPAdapter(max_retries=retry_strategy))
 
         matrix = parallel.spread_load_for_parallel(links, num_threads)
         if num_threads == 1 :

@@ -8,7 +8,7 @@ from typing import Optional, cast
 import bs4
 
 from .BaseScraper import BaseScraper, ItemPair
-from .Models.Hop import Hop, hop_attribute_from_str, RadarChart
+from .Models.Hop import Hop, hop_attribute_from_str
 from .Models.Ranges import NumericRange
 from .Models.BeerMaverick import HopApi as bmapi
 
@@ -25,9 +25,9 @@ class HopScraper(BaseScraper[Hop]) :
         self.reset()
 
     def reset(self) :
+        super().reset()
         self.hops = []
         self.error_items = []
-        self.ok_items = []
 
     def scrap(self, links: list[str], num_threads: int = -1) -> bool:
         self.reset()
@@ -196,6 +196,7 @@ class HopScraper(BaseScraper[Hop]) :
             if response.status != 200 :
                 new_hop.add_parsing_error(str(response))
                 out_error_item_list.append(new_hop)
+                self.treated_item += 1
                 continue
 
             try:
@@ -207,7 +208,7 @@ class HopScraper(BaseScraper[Hop]) :
                 # Another option would be to render the whole page with tools like Selenium, then perform OCR on the chart
                 hop_url_unique = new_hop.link.split("/")[-2]
                 url = f"https://beermaverick.com/api/?hop={hop_url_unique}"
-                response = await self.async_client.get(url)
+                response = await self.async_client.get(url) #type: ignore
                 if response.status == 200 :
                     bm_hop_model = bmapi.BMHopModel()
                     json_content = await response.json()
@@ -216,10 +217,12 @@ class HopScraper(BaseScraper[Hop]) :
                     new_hop.radar_chart_from_bmapi(bm_hop_model)
 
                 out_item_list.append(new_hop)
+                self.treated_item += 1
 
             except : # Exception as e :
                 out_error_item_list.append(new_hop)
                 traceback.print_exc()
+                self.treated_item += 1
 
     def atomic_scrap(self, links: list[str], out_error_item_list : list[Hop], out_item_list : list[Hop]) -> None:
         """Atomic function used by asynchronous executers (threads).
@@ -235,6 +238,7 @@ class HopScraper(BaseScraper[Hop]) :
             if response.status_code != 200 :
                 new_hop.add_parsing_error(str(response))
                 out_error_item_list.append(new_hop)
+                self.treated_item += 1
                 continue
 
             try:
@@ -255,10 +259,12 @@ class HopScraper(BaseScraper[Hop]) :
                     new_hop.radar_chart_from_bmapi(bm_hop_model)
 
                 out_item_list.append(new_hop)
+                self.treated_item += 1
 
             except : # Exception as e :
                 out_error_item_list.append(new_hop)
                 traceback.print_exc()
+                self.treated_item += 1
 
     def parse_hop_item_from_page(self, parser : bs4.BeautifulSoup, hop : Hop) -> None :
         name_node = parser.find("h1", attrs={"class" : "entry-title"})

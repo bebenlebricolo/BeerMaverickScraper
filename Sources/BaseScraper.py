@@ -16,11 +16,15 @@ class ItemPair(Generic[T]) :
 class BaseScraper(Generic[T]) :
     async_client : Optional[aiohttp.client.ClientSession] = None
     request_client : Optional[requests.Session] = None
+    treated_item : int = 0
 
     def __init__(self, async_client : Optional[aiohttp.client.ClientSession],
                        request_client : Optional[requests.Session]) -> None:
         self.async_client = async_client
         self.request_client = request_client
+
+    def reset(self) :
+        self.treated_item = 0
 
     def scrap(self, links : list[str], num_threads : int = -1) -> bool:
         return False

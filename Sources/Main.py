@@ -4,12 +4,17 @@ import json
 from pathlib import Path
 import aiohttp
 
+import time
 import requests
+from requests.adapters import HTTPAdapter
+
 from bs4 import BeautifulSoup
 import asyncio
 from typing import Any
 
 from threading import Thread
+
+from urllib3 import Retry
 
 from .Models.Hop import Hop
 from .Models.Yeast import Yeast
@@ -18,6 +23,7 @@ from .Models.Yeast import Yeast
 
 from .ProgressBar import draw_progress_bar, print_buffer
 
+from .BaseScraper import BaseScraper
 from .HopScraper import HopScraper
 from .YeastScraper import YeastScraper
 #from .FermentableScraper import FermentablePageScrapper
@@ -138,19 +144,21 @@ def write_yeasts_json_to_disk(filepath : Path, yeasts : list[Yeast]):
 async def instantiate_aiohttp_client_async() -> aiohttp.ClientSession :
     return aiohttp.ClientSession()
 
-
-def report_loop(yeast_scraper : YeastScraper, links : list[str]) :
+def report_loop(scraper : BaseScraper[Any], links : list[str]) :
     old_treated_elem_count = 0
+
+    # Give the scraper some time before it actually starts processing anything
+    time.sleep(0.5)
 
     # Dummy line that'll get overwritten
     print("", end="")
     buffer = draw_progress_bar(0)
     print_buffer(buffer)
-    while yeast_scraper.treated_item < len(links) :
+    while scraper.treated_item < len(links) :
 
         # New item added event !
-        if old_treated_elem_count != yeast_scraper.treated_item :
-            old_treated_elem_count = yeast_scraper.treated_item
+        if old_treated_elem_count != scraper.treated_item :
+            old_treated_elem_count = scraper.treated_item
             percentage = round(old_treated_elem_count * 100 / len(links))
             buffer = draw_progress_bar(percentage)
             print_buffer(buffer)
@@ -194,8 +202,24 @@ def main(args : list[str]):
             continue
 
     sync_http_client = requests.Session()
+
+    # Some retry strategy !
+    retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
+    )
+    sync_http_client.adapters.clear()
+    sync_http_client.mount("https://", HTTPAdapter(max_retries=retry_strategy))
+
+
     hop_scraper = HopScraper(request_client=sync_http_client)
     yeast_scraper = YeastScraper(request_client=sync_http_client)
+
+    ##################################################################
+    ########################## Hops parsing ##########################
+    ##################################################################
 
     # Retrieving Hops from cache
     hops : list[Hop] = []
@@ -206,6 +230,10 @@ def main(args : list[str]):
         for hop in hops :
             hop_links.remove(hop.link)
 
+    report_loop_thread : Thread
+    if max_jobs != 1 :
+        report_loop_thread = Thread(target=report_loop, args=(hop_scraper, yeast_links))
+        report_loop_thread.start()
 
     # Only scrap what's necessary to limit load of the server
     if len(hop_links) > 0 :
@@ -213,6 +241,13 @@ def main(args : list[str]):
         hops += scraped_hops
     write_hops_json_to_disk(hops_filepath, hops)
 
+    if max_jobs != 1 :
+        report_loop_thread.join() #type: ignore
+
+
+    ##################################################################
+    ######################## Yeasts parsing ##########################
+    ##################################################################
 
     # Share the session
     yeast_scraper.async_client = hop_scraper.async_client
