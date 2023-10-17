@@ -1,9 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional, cast
 from .Jsonable import Jsonable
 
 @dataclass
 class ScrapedObject(Jsonable) :
+    # Id retains the unique identifier of the object and is used later on
+    # to map objects on one another
+    id : str                             = field(default_factory=str)
     parsing_errors : Optional[list[str]] = None
 
     def to_json(self) -> dict[str, Any]:
