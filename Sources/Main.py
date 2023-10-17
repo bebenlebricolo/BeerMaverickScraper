@@ -6,13 +6,18 @@ from pathlib import Path
 import argparse
 import uuid
 
+import google.cloud.firestore as fstore         #type: ignore
+from google.cloud.exceptions import Conflict    #type: ignore
+from google.oauth2 import service_account       #type: ignore
+from google.auth.credentials import Credentials #type: ignore
+
 import time
 import requests
 from requests.adapters import HTTPAdapter
 
 from bs4 import BeautifulSoup
 import asyncio
-from typing import Any
+from typing import Any, TypeVar
 
 from threading import Thread
 
@@ -22,6 +27,8 @@ from .Models.Hop import Hop
 from .Models.Yeast import Yeast
 # from .Models import Water
 # from .Models import Fermentable
+
+from .Utils.parallel import spread_load_for_parallel
 
 from .ProgressBar import draw_progress_bar, print_buffer
 
@@ -35,6 +42,9 @@ class Directories :
     CACHE_DIR = SCRIPT_DIR.joinpath(".cache")
     EXTRACTED_DIR = CACHE_DIR.joinpath("extracted")
     PROCESSED_DIR = CACHE_DIR.joinpath("processed")
+
+    # Secrets directory resides at workspace folder
+    SECRETS_DIR = SCRIPT_DIR.joinpath("../.secrets")
 
     @staticmethod
     def ensure_cache_directory_exists():
@@ -85,21 +95,22 @@ def scrap_hops(hops_links : list[str], scraper : HopScraper, use_threads : bool 
         for hop in hops :
             hops_links.remove(hop.link)
 
-    report_loop_thread : Thread
-    if max_jobs != 1 and len(hops_links) > 0 :
-        report_loop_thread = Thread(target=report_loop, args=(scraper, hops_links))
-        report_loop_thread.start()
-
     # Only scrap what's necessary to limit load of the server
     if len(hops_links) > 0 :
+        print("Parsing hops.")
+        report_loop_thread : Thread
+        progress_accessor = ScraperProgressAccessor(scraper)
+        report_loop_thread = Thread(target=report_progress_threaded, args=(progress_accessor, len(hops_links)))
+        report_loop_thread.start()
+
         scraped_hops = _scrap_hops_from_website(hops_links, scraper, multi_threaded=use_threads, max_jobs=max_jobs)
         hops += scraped_hops
+
+        report_loop_thread.join()
     else :
         print("Hop parsing : no hop to parse, all done !")
     write_hops_json_to_disk(hops_filepath, hops)
 
-    if max_jobs != 1 and len(hops_links) > 0:
-        report_loop_thread.join() #type: ignore
 
     return hops
 
@@ -141,6 +152,38 @@ def write_hops_json_to_disk(filepath : Path, hops : list[Hop]):
         json.dump(json_content, file, indent=4)
 
 
+class ProgressReportAccessor:
+    def get(self) -> int :
+        return 0
+
+class ScraperProgressAccessor(ProgressReportAccessor):
+    scraper : BaseScraper[Any]
+    def __init__(self, scraper: BaseScraper[Any]) -> None:
+        self.scraper = scraper
+
+    def get(self) -> int:
+        return self.scraper.treated_item
+
+class AsyncSafeCounter(ProgressReportAccessor):
+    data : int = 0
+    locked : bool = False
+    def __init__(self, data : int = 0) -> None:
+        self.data = data
+
+    def get(self) -> int:
+        return self.data
+
+    def increment(self) :
+        while self.locked :
+            pass
+        self.locked = True
+        self.data += 1
+        self.locked = False
+
+
+def scraper_elem_count_accessor(scraper : BaseScraper[Any]) -> int :
+    return scraper.treated_item
+
 def scrap_yeasts(yeasts_links : list[str], scraper : YeastScraper, use_threads : bool = False, max_jobs : int = 0, force : bool = False) -> list[Yeast]:
     # Retrieving Yeasts from cache
     yeasts : list[Yeast] = []
@@ -151,21 +194,24 @@ def scrap_yeasts(yeasts_links : list[str], scraper : YeastScraper, use_threads :
             yeasts_links.remove(yeast.link)
 
 
-    report_loop_thread : Thread
-    if max_jobs != 1 and len(yeasts_links) > 0 :
-        report_loop_thread = Thread(target=report_loop, args=(scraper, yeasts_links))
-        report_loop_thread.start()
 
     # Only scrap what's necessary to limit load of the server
     if len(yeasts_links) > 0 :
+        print("Parsing yeasts.")
+
+        report_loop_thread : Thread
+        progress_accessor = ScraperProgressAccessor(scraper)
+        report_loop_thread = Thread(target=report_progress_threaded, args=(progress_accessor, len(yeasts_links)))
+        report_loop_thread.start()
+
         scraped_yeasts = _scrap_yeasts_from_website(yeasts_links, scraper, multi_threaded=use_threads, max_jobs=max_jobs)
         yeasts += scraped_yeasts
+
+        report_loop_thread.join()
     else :
         print("Yeast parsing : no yeast to parse, all done !")
     write_yeasts_json_to_disk(yeasts_filepath, yeasts)
 
-    if max_jobs != 1 and len(yeasts_links) > 0:
-        report_loop_thread.join() #type: ignore
 
     return yeasts
 
@@ -205,7 +251,7 @@ def write_yeasts_json_to_disk(filepath : Path, yeasts : list[Yeast]):
     with open(filepath, "w") as file :
         json.dump(json_content, file, indent=4)
 
-def report_loop(scraper : BaseScraper[Any], links : list[str]) :
+def report_scrap_loop(scraper : BaseScraper[Any], links : list[str]) :
     old_treated_elem_count = 0
 
     # Give the scraper some time before it actually starts processing anything
@@ -232,7 +278,6 @@ class CategorizedLinks :
     water : list[str]       = field(default_factory=list[str])
     styles : list[str]      = field(default_factory=list[str])
 
-
 def split_links_by_category(links : list[str]) -> CategorizedLinks :
     cat_links = CategorizedLinks()
     for link in links :
@@ -252,7 +297,6 @@ def split_links_by_category(links : list[str]) -> CategorizedLinks :
             cat_links.yeasts.append(link)
             continue
     return cat_links
-
 
 def main(args : list[str]):
     bold_ansicode = "\033[1m"
@@ -318,7 +362,7 @@ def main(args : list[str]):
     ########################## Hops parsing ##########################
     ##################################################################
 
-    hops =scrap_hops(categorized_links.hops, hop_scraper, use_threads, max_jobs, force)
+    hops = scrap_hops(categorized_links.hops, hop_scraper, use_threads, max_jobs, force)
 
     ##################################################################
     ######################## Yeasts parsing ##########################
@@ -362,10 +406,96 @@ def main(args : list[str]):
                 # So we'll need to find a solution for that.
                 print(f"Yeast : \"{yeast.name}\" with link : {yeast.link} has issues in comparable yeasts : \"{linked_yeast}\"")
 
+    print("Dumping post-processed yeasts to disk.")
     write_yeasts_json_to_disk(Directories.PROCESSED_DIR.joinpath("yeasts.json"), yeasts)
+    print("-> Ok.")
 
+
+    print("\nAcquiring credentials for remote services ...")
+    credentials = service_account.Credentials.from_service_account_file(Directories.SECRETS_DIR.joinpath("service_account.json")) #type: ignore
+    fs_client = fstore.AsyncClient("druids-corner-cloud", credentials=credentials)
+    hopsDb = fs_client.collection("bmHops")                                         #type: ignore
+    yeastsDb = fs_client.collection("bmYeasts")
+    print("-> Ok.")
+
+    if False :
+        # Start bulk upload
+        asyncio.run(upload_all_data_async(hops, yeasts, hopsDb, yeastsDb, max_jobs))
+
+    doc = asyncio.run(hopsDb.document(hops[0].id).get())
+    new_hop = Hop()
+    new_hop.from_json(doc.to_dict())
 
     return 0
+
+
+async def upload_all_data_async(hops : list[Hop], yeasts : list[Yeast], hopsDb : fstore.AsyncCollectionReference, yeastsDb : fstore.AsyncCollectionReference, max_jobs : int) :
+    print("Uploading data to remote database ...")
+    print("Uploading hops ...")
+    tasks_input_list = spread_load_for_parallel(hops, max_jobs)
+    await upload_bulk_item_dispatch_async(tasks_input_list, hopsDb, len(hops))
+    print("-> Ok.")
+
+    print("Uploading yeasts ...")
+    tasks_input_list = spread_load_for_parallel(yeasts, max_jobs)
+    await upload_bulk_item_dispatch_async(tasks_input_list, yeastsDb, len(yeasts))
+    print("-> Ok.")
+
+
+def report_progress_threaded(accessor : ProgressReportAccessor, total_elem_count : int = 0) :
+    old_treated_elem_count = 0
+
+    # Give the scraper some time before it actually starts processing anything
+    time.sleep(0.5)
+
+    # Dummy line that'll get overwritten
+    print("", end="")
+    buffer = draw_progress_bar(0)
+    print_buffer(buffer)
+    while accessor.get() < total_elem_count :
+
+        # New item added event !
+        if old_treated_elem_count != accessor.get() :
+            old_treated_elem_count = accessor.get()
+            percentage = round(old_treated_elem_count * 100 / total_elem_count)
+            buffer = draw_progress_bar(percentage)
+            print_buffer(buffer)
+
+T = TypeVar("T", Hop, Yeast)
+async def upload_bulk_item_dispatch_async(tasks_input_list : list[list[T]], db : fstore.AsyncCollectionReference, total_elem_count : int = 0) :
+    """Dispatches input task matrix to individual async tasks"""
+    report_loop_thread : Thread
+    async_progress_accessor = AsyncSafeCounter()
+    report_loop_thread = Thread(target=report_progress_threaded, args=(async_progress_accessor, total_elem_count))
+    report_loop_thread.start()
+
+    async with asyncio.TaskGroup() as tg :
+        for inputs in tasks_input_list :
+            tg.create_task(upload_item_async(inputs, db, async_progress_accessor))
+
+    report_loop_thread.join()
+
+async def upload_item_async(items : list[T], db : fstore.AsyncCollectionReference, progress_accessor : AsyncSafeCounter) :
+    """Uploads a single item list, using internal event loop."""
+
+    # Hints : https://clemfournier.medium.com/make-crud-operations-on-firebase-firestore-in-python-d51ab6aa98af
+    for item in items :
+        try :
+            doc_ref = await db.document(item.id).get()
+            if doc_ref.exists :
+                # Replace document
+                write_option = fstore.WriteOption()
+                await db.document(item.id).update(item.to_json(), option=write_option)
+            else :
+                await db.add(item.to_json(), document_id = item.id)
+
+        except Exception as e:
+            # Item already exist
+            print(e)
+            pass
+        # Bump the uploaded items count safely (async safe)
+        progress_accessor.increment()
+
 
 
 

@@ -118,6 +118,9 @@ class YeastScraper(BaseScraper[Yeast]) :
         if self.async_client == None :
             print("/!\\ Warning : no session found for async http requests, creating a new one.")
             self.async_client = aiohttp.ClientSession()
+        elif self.async_client.closed :
+            self.async_client = aiohttp.ClientSession()
+
 
         # retry_strategy = Retry(
         #     total=3,

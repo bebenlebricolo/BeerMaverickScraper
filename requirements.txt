@@ -5,3 +5,4 @@ requests==2.31.0
 pytest>=7.4
 aiohttp>=3.8
 aiohttp-retry==2.8.3
+google-cloud-firestore==2.12.0
