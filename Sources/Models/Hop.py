@@ -6,6 +6,8 @@ from typing import cast, Any
 
 from .Ranges import RatioRange, NumericRange
 from .ScapedObject import ScrapedObject
+from .Jsonable import Jsonable
+from .BeerMaverick import HopApi as bmapi
 
 class HopAttribute(Enum) :
     Bittering = "Bittering"
@@ -29,32 +31,69 @@ def hop_attribute_from_str(input : str) -> HopAttribute :
 
 
 @dataclass
+class RadarChart(Jsonable) :
+    citrus : int            = field(default=0)
+    tropical_fruit : int    = field(default=0)
+    stone_fruit : int       = field(default=0)
+    berry : int             = field(default=0)
+    floral : int            = field(default=0)
+    grassy : int            = field(default=0)
+    herbal : int            = field(default=0)
+    spice : int             = field(default=0)
+    resinous : int          = field(default=0)
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "citrus" : self.citrus,
+            "tropicalFruit" : self.tropical_fruit,
+            "stoneFruit" : self.stone_fruit,
+            "berry" : self.berry,
+            "floral" : self.floral,
+            "grassy" : self.grassy,
+            "herbal" : self.herbal,
+            "spice" : self.spice,
+            "resinous" : self.resinous
+        }
+
+    def from_json(self, content: dict[str, Any]) -> None:
+        self.citrus = self._read_prop("citrus", content, 0)
+        self.tropical_fruit = self._read_prop("tropicalFruit", content, 0)
+        self.stone_fruit = self._read_prop("stoneFruit", content, 0)
+        self.berry = self._read_prop("berry", content, 0)
+        self.floral = self._read_prop("floral", content, 0)
+        self.grassy = self._read_prop("grassy", content, 0)
+        self.herbal = self._read_prop("herbal", content, 0)
+        self.spice = self._read_prop("spice", content, 0)
+        self.resinous = self._read_prop("resinous", content, 0)
+
+
+@dataclass
 class Hop(ScrapedObject) :
     # Basic characteristics
-    name : str = field(default_factory=str)
-    link : str = field(default_factory=str)
-    purpose : HopAttribute = HopAttribute.Bittering
-    country : str = field(default_factory=str)
-    international_code : str = field(default_factory=str)
-    cultivar_id : str = field(default_factory=str)
-    origin_txt : str = field(default_factory=str)
-    flavor_txt : str = field(default_factory=str)
-    tags : list[str] = field(default_factory=list)
+    name : str                  = field(default_factory=str)
+    link : str                  = field(default_factory=str)
+    purpose : HopAttribute      = HopAttribute.Bittering
+    country : str               = field(default_factory=str)
+    international_code : str    = field(default_factory=str)
+    cultivar_id : str           = field(default_factory=str)
+    origin_txt : str            = field(default_factory=str)
+    flavor_txt : str            = field(default_factory=str)
+    tags : list[str]            = field(default_factory=list)
 
     # Hop detailed characteristics
-    alpha_acids : NumericRange = field(default_factory=NumericRange)
-    beta_acids : NumericRange = field(default_factory=NumericRange)
-    alpha_beta_ratio : RatioRange = field(default_factory=RatioRange)
-    hop_storage_index : float = 100
-    co_humulone_normalized : NumericRange = field(default_factory=NumericRange)
-    total_oils : NumericRange = field(default_factory=NumericRange)
+    alpha_acids : NumericRange              = field(default_factory=NumericRange)
+    beta_acids : NumericRange               = field(default_factory=NumericRange)
+    alpha_beta_ratio : RatioRange           = field(default_factory=RatioRange)
+    hop_storage_index : float               = 100
+    co_humulone_normalized : NumericRange   = field(default_factory=NumericRange)
+    total_oils : NumericRange               = field(default_factory=NumericRange)
 
     # Oil contents
-    myrcene : NumericRange = field(default_factory=NumericRange)
-    humulene : NumericRange = field(default_factory=NumericRange)
-    caryophyllene : NumericRange = field(default_factory=NumericRange)
-    farnesene : NumericRange = field(default_factory=NumericRange)
-    other_oils : NumericRange = field(default_factory=NumericRange)
+    myrcene : NumericRange          = field(default_factory=NumericRange)
+    humulene : NumericRange         = field(default_factory=NumericRange)
+    caryophyllene : NumericRange    = field(default_factory=NumericRange)
+    farnesene : NumericRange        = field(default_factory=NumericRange)
+    other_oils : NumericRange       = field(default_factory=NumericRange)
 
     # Textual description of beer styles, this is written in length text.
     # Assuming the populating data comes from an Api of some sort, we can probably identify a pattern and remove it programmatically to
@@ -64,6 +103,8 @@ class Hop(ScrapedObject) :
     # May be changed to use a unique id instead of "just" the hop name, using the pointed URL and maybe a map that pairs an URL to a unique hop
     # For now this will do, especially if there is no name conflict.
     substitutes : list[str] = field(default_factory=list)
+
+    radar_chart : RadarChart = field(default_factory=RadarChart)
 
     def __eq__(self, other: object) -> bool:
 
@@ -95,6 +136,7 @@ class Hop(ScrapedObject) :
         identical &= self.other_oils == other.other_oils
         identical &= self.beer_styles == other.beer_styles
         identical &= self.substitutes == other.substitutes
+        identical &= self.radar_chart == other.radar_chart
 
         return identical
 
@@ -121,7 +163,8 @@ class Hop(ScrapedObject) :
             "farnesene" : self.farnesene.to_json(),
             "otherOils" : self.other_oils.to_json(),
             "beerStyles" : self.beer_styles,
-            "substitutes" : self.substitutes
+            "substitutes" : self.substitutes,
+            "radarChart" : self.radar_chart.to_json()
         }
 
         # Doing the parent at the end as it only contains the parsingErrors that we want to go to the end of the object
@@ -153,3 +196,19 @@ class Hop(ScrapedObject) :
         self.other_oils.from_json(content["otherOils"])
         self.beer_styles = self._read_prop("beerStyles", content, [])
         self.substitutes = self._read_prop("substitutes", content, [])
+
+        self.radar_chart.from_json(content["radarChart"])
+
+    def radar_chart_from_bmapi(self, api_model : bmapi.BMHopModel) :
+        self.radar_chart.citrus = api_model.primary.radar_chart[0]
+        self.radar_chart.tropical_fruit = api_model.primary.radar_chart[1]
+        self.radar_chart.stone_fruit = api_model.primary.radar_chart[2]
+        self.radar_chart.berry = api_model.primary.radar_chart[3]
+        self.radar_chart.floral = api_model.primary.radar_chart[4]
+        self.radar_chart.grassy = api_model.primary.radar_chart[5]
+        self.radar_chart.herbal = api_model.primary.radar_chart[6]
+        self.radar_chart.spice = api_model.primary.radar_chart[7]
+        self.radar_chart.resinous = api_model.primary.radar_chart[8]
+
+
+        # Some text

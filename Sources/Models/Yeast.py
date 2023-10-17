@@ -47,7 +47,7 @@ class Yeast(Jsonable):
         self.alcohol_tolerance = self._read_prop("alcoholTolerance", content, "")
         self.attenuation.from_json(content["attenuation"])
         self.flocculation = self._read_prop("flocculation", content, "")
-        self.optimal_temperature.from_json(content["optimal_temperature"])
+        self.optimal_temperature.from_json(content["optimalTemperature"])
 
         self.comparable_yeasts = []
         for item in content["comparableYeasts"] :

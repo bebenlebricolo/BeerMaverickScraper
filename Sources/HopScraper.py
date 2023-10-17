@@ -4,12 +4,13 @@ import requests
 import datetime
 from threading import Thread
 import traceback
-from typing import Optional
+from typing import Optional, cast
 import bs4
 
 from .BaseScraper import BaseScraper, ItemPair
-from .Models.Hop import Hop, hop_attribute_from_str
+from .Models.Hop import Hop, hop_attribute_from_str, RadarChart
 from .Models.Ranges import NumericRange
+from .Models.BeerMaverick import HopApi as bmapi
 
 from .Utils import parallel
 
@@ -120,7 +121,7 @@ class HopScraper(BaseScraper[Hop]) :
             try :
                 error_list = []
                 item_list = []
-                self.atomic_scrap(links, error_list, item_list)
+                await self.atomic_scrap_async(links, error_list, item_list)
                 if len(error_list) > 0 :
                     print("Caught some issues while retrieving hops from website.")
 
@@ -200,6 +201,20 @@ class HopScraper(BaseScraper[Hop]) :
             try:
                 parser = bs4.BeautifulSoup(await response.content.read(), "html.parser")
                 self.parse_hop_item_from_page(parser, new_hop)
+
+                # NOTE : We don't like to use the api directly, as this is not scraping.
+                # However we can use this to read the radar chart, which is the only option to read it.
+                # Another option would be to render the whole page with tools like Selenium, then perform OCR on the chart
+                hop_url_unique = new_hop.link.split("/")[-2]
+                url = f"https://beermaverick.com/api/?hop={hop_url_unique}"
+                response = await self.async_client.get(url)
+                if response.status == 200 :
+                    bm_hop_model = bmapi.BMHopModel()
+                    json_content = await response.json()
+                    bm_hop_model.from_json(json_content)
+
+                    new_hop.radar_chart_from_bmapi(bm_hop_model)
+
                 out_item_list.append(new_hop)
 
             except : # Exception as e :
@@ -211,11 +226,12 @@ class HopScraper(BaseScraper[Hop]) :
            Returns two output lists :
            * out_error_item_list : list of rejected objects (caused by a hard issue, like http connection failing/etc)
            * out_item_list : list of item that could be parsed. Check for the internal error list to see non-critical parsing warnings"""
+        self.request_client = cast(requests.Session, self.request_client)
         for link in links :
             new_hop = Hop(link=link)
 
             # Critical error, reject data
-            response = self.request_client.get(link) #type: ignore
+            response = self.request_client.get(link)
             if response.status_code != 200 :
                 new_hop.add_parsing_error(str(response))
                 out_error_item_list.append(new_hop)
@@ -224,6 +240,20 @@ class HopScraper(BaseScraper[Hop]) :
             try:
                 parser = bs4.BeautifulSoup(response.content, "html.parser")
                 self.parse_hop_item_from_page(parser, new_hop)
+
+                # NOTE : We don't like to use the api directly, as this is not scraping.
+                # However we can use this to read the radar chart, which is the only option to read it.
+                # Another option would be to render the whole page with tools like Selenium, then perform OCR on the chart
+                hop_url_unique = new_hop.link.split("/")[-2]
+                url = f"https://beermaverick.com/api/?hop={hop_url_unique}"
+                response = self.request_client.get(url)
+                if response.status_code == 200 :
+                    bm_hop_model = bmapi.BMHopModel()
+                    json_content = response.json()
+                    bm_hop_model.from_json(json_content)
+
+                    new_hop.radar_chart_from_bmapi(bm_hop_model)
+
                 out_item_list.append(new_hop)
 
             except : # Exception as e :
@@ -246,6 +276,11 @@ class HopScraper(BaseScraper[Hop]) :
         success &= self.parse_brewing_values(parser, hop)
         success &= self.parse_beer_style(parser, hop)
         success &= self.parse_hop_substitution(parser, hop)
+
+        if len(hop.substitutes) != 0 :
+            for i in range(0, len(hop.substitutes)) :
+                url = f"https://beermaverick.com{hop.substitutes[i]}"
+                hop.substitutes[i] = url
 
         if not success :
             hop.add_parsing_error("Some parts of this Hop failed to be read")

@@ -9,10 +9,14 @@ from bs4 import BeautifulSoup
 import asyncio
 from typing import Any
 
+from threading import Thread
+
 from .Models.Hop import Hop
 from .Models.Yeast import Yeast
 # from .Models import Water
 # from .Models import Fermentable
+
+from .ProgressBar import draw_progress_bar, print_buffer
 
 from .HopScraper import HopScraper
 from .YeastScraper import YeastScraper
@@ -134,8 +138,28 @@ def write_yeasts_json_to_disk(filepath : Path, yeasts : list[Yeast]):
 async def instantiate_aiohttp_client_async() -> aiohttp.ClientSession :
     return aiohttp.ClientSession()
 
+
+def report_loop(yeast_scraper : YeastScraper, links : list[str]) :
+    old_treated_elem_count = 0
+
+    # Dummy line that'll get overwritten
+    print("", end="")
+    buffer = draw_progress_bar(0)
+    print_buffer(buffer)
+    while yeast_scraper.treated_item < len(links) :
+
+        # New item added event !
+        if old_treated_elem_count != yeast_scraper.treated_item :
+            old_treated_elem_count = yeast_scraper.treated_item
+            percentage = round(old_treated_elem_count * 100 / len(links))
+            buffer = draw_progress_bar(percentage)
+            print_buffer(buffer)
+
+
 def main(args : list[str]):
     max_jobs = int(args[1])
+    use_threads = args[2].lower() == "true" if len(args) >= 2 else False
+    force = args[3].lower() == "true" if len(args) >= 3 else False
 
     Directories.ensure_cache_directory_exists()
 
@@ -174,30 +198,47 @@ def main(args : list[str]):
     yeast_scraper = YeastScraper(request_client=sync_http_client)
 
     # Retrieving Hops from cache
+    hops : list[Hop] = []
     hops_filepath = Directories.CACHE_DIR.joinpath("hops.json")
-    hops = read_hops_from_cache(hops_filepath)
-    for hop in hops :
-        hop_links.remove(hop.link)
+
+    if not force:
+        hops = read_hops_from_cache(hops_filepath)
+        for hop in hops :
+            hop_links.remove(hop.link)
+
 
     # Only scrap what's necessary to limit load of the server
     if len(hop_links) > 0 :
-        scraped_hops = scrap_hops_from_website(hop_links, hop_scraper, max_jobs=max_jobs)
+        scraped_hops = scrap_hops_from_website(hop_links, hop_scraper, multi_threaded=use_threads, max_jobs=max_jobs)
         hops += scraped_hops
     write_hops_json_to_disk(hops_filepath, hops)
 
+
+    # Share the session
+    yeast_scraper.async_client = hop_scraper.async_client
+
     # Retrieving Yeasts from cache
+    yeasts : list[Yeast] = []
     yeasts_filepath = Directories.CACHE_DIR.joinpath("yeasts.json")
-    yeasts = read_yeasts_from_cache(yeasts_filepath)
-    for yeast in yeasts :
-        yeast_links.remove(yeast.link)
+    if not force :
+        yeasts = read_yeasts_from_cache(yeasts_filepath)
+        for yeast in yeasts :
+            yeast_links.remove(yeast.link)
+
+
+    report_loop_thread : Thread
+    if max_jobs != 1 :
+        report_loop_thread = Thread(target=report_loop, args=(yeast_scraper, yeast_links))
+        report_loop_thread.start()
 
     # Only scrap what's necessary to limit load of the server
     if len(yeast_links) > 0 :
-        scraped_yeasts = scrap_yeasts_from_website(yeast_links, yeast_scraper, max_jobs=max_jobs)
+        scraped_yeasts = scrap_yeasts_from_website(yeast_links, yeast_scraper, multi_threaded=use_threads, max_jobs=max_jobs)
         yeasts += scraped_yeasts
     write_yeasts_json_to_disk(yeasts_filepath, yeasts)
 
-
+    if max_jobs != 1 :
+        report_loop_thread.join() #type: ignore
 
     return 0
 

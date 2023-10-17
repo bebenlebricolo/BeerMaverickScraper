@@ -1,6 +1,6 @@
 import unittest
 import json
-from ..Hop import Hop, HopAttribute
+from ..Hop import Hop, HopAttribute, RadarChart
 
 class TestHopModelSerialization(unittest.TestCase):
     def test_hop_symmetric_json(self):
@@ -48,6 +48,8 @@ class TestHopModelSerialization(unittest.TestCase):
 
         hop.beer_styles = ["Ale", "Sour", "Don't know"]
         hop.substitutes = ["Substitute 1", "Substitute 2", "Substitute 3"]
+
+        hop.radar_chart = RadarChart(citrus=1, berry=2, tropical_fruit=3, stone_fruit=4, floral=0, grassy=3, herbal=1, spice=2, resinous=0)
 
         content = hop.to_json()
         print(json.dumps(content, indent=4))

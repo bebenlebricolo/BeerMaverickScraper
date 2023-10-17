@@ -1,5 +1,7 @@
-from cgitb import small
-import attr
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from aiohttp_retry import RetryClient, ExponentialRetry
+
 import requests
 import asyncio
 import aiohttp
@@ -18,6 +20,7 @@ from .Utils import parallel
 class YeastScraper(BaseScraper[Yeast]) :
     yeasts : list[Yeast]
     error_items : list[ItemPair[str]]
+    treated_item : int = 0
 
     def __init__(self, async_client: Optional[aiohttp.ClientSession] = None,
                  request_client: Optional[requests.Session] = None) :
@@ -27,13 +30,22 @@ class YeastScraper(BaseScraper[Yeast]) :
     def reset(self) :
         self.yeasts = []
         self.error_items = []
-        self.ok_items = []
+        self.treated_item = 0
 
     def scrap(self, links: list[str], num_threads: int = -1) -> bool:
         self.reset()
         if self.request_client == None :
             print("/!\\ Warning : no session found for synchronous http requests, creating a new one.")
             self.request_client = requests.Session()
+
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
+        )
+        self.request_client.adapters.clear()
+        self.request_client.mount("https://", HTTPAdapter(max_retries=retry_strategy))
 
         matrix = parallel.spread_load_for_parallel(links, num_threads)
         if num_threads == 1 :
@@ -42,7 +54,7 @@ class YeastScraper(BaseScraper[Yeast]) :
             try :
                 error_list = []
                 item_list = []
-                self.atomic_scrap(links, error_list, item_list)
+                self.atomic_scrap(links, error_list, item_list, monothread=True)
                 if len(error_list) > 0 :
                     print("Caught some issues while retrieving hops from website.")
 
@@ -79,7 +91,6 @@ class YeastScraper(BaseScraper[Yeast]) :
             new_thread = Thread(target=self.atomic_scrap, args=(sublist, error_item_list, output_item_list)) #type: ignore
             new_thread.start()
             thread_list.append(new_thread)
-            #print(f"Spawning new thread with id : {new_thread.ident}.")
 
         joined_threads  : list[int] = []
 
@@ -120,14 +131,23 @@ class YeastScraper(BaseScraper[Yeast]) :
             print("/!\\ Warning : no session found for async http requests, creating a new one.")
             self.async_client = aiohttp.ClientSession()
 
+        # retry_strategy = Retry(
+        #     total=3,
+        #     backoff_factor=5,
+        #     status_forcelist=[429, 500, 502, 503, 504],
+        #     allowed_methods=["HEAD", "GET", "OPTIONS"]
+        # )
+        # self.async_client.
+        # self.request_client.mount("https://", HTTPAdapter(max_retries=retry_strategy))
+
         matrix = parallel.spread_load_for_parallel(links, num_tasks)
         if num_tasks == 1 :
             start = datetime.datetime.now()
             print(f"Retrieving Yeasts, running synchronously. Starting at : {self.get_formatted_time()}")
             try :
                 error_list = []
-                item_list = []
-                self.atomic_scrap(links, error_list, item_list)
+                item_list : list[Yeast] = []
+                await self.atomic_scrap_async(links, error_list, item_list, monothread=True)
                 if len(error_list) > 0 :
                     print("Caught some issues while retrieving Yeasts from website.")
 
@@ -182,7 +202,7 @@ class YeastScraper(BaseScraper[Yeast]) :
 
         return True
 
-    async def atomic_scrap_async(self, links: list[str], out_error_item_list : list[Yeast], out_item_list : list[Yeast]) -> None:
+    async def atomic_scrap_async(self, links: list[str], out_error_item_list : list[Yeast], out_item_list : list[Yeast], monothread : bool = False) -> None:
         """Atomic function used by asynchronous executers (asyncio runner).
            Returns two output lists :
            * out_error_item_list : list of rejected objects (caused by a hard issue, like http connection failing/etc)
@@ -192,11 +212,18 @@ class YeastScraper(BaseScraper[Yeast]) :
 
             new_yeast = Yeast(link=link)
 
+            if monothread :
+                print(f"Parsing link : {link}")
+
             # Critical error, reject data
             response = await self.async_client.get(link) #type: ignore
             if response.status != 200 :
                 new_yeast.add_parsing_error(str(response))
                 out_error_item_list.append(new_yeast)
+
+                if monothread :
+                    print("-> Failed.")
+                self.treated_item += 1
                 continue
 
             try:
@@ -204,11 +231,49 @@ class YeastScraper(BaseScraper[Yeast]) :
                 self.parse_yeast_item_from_page(parser, new_yeast, error_list)
                 out_item_list.append(new_yeast)
 
+                if len(new_yeast.comparable_yeasts) > 0 :
+                    for i in range(0, len(new_yeast.comparable_yeasts)) :
+                        url = f"https://beermaverick.com{new_yeast.comparable_yeasts[i]}"
+
+                        # This call is being redirected by server, we just want to map the redirected address in lieu and place of
+                        # the short url; so that we can use the unique url as a key later to replace each yeast per a unique id in the catalogue.
+                        response = await self.async_client.get(url, allow_redirects=False) #type: ignore
+                        new_yeast.comparable_yeasts[i] = self.recover_comparable_yeast_link(await response.content.read(),
+                                                                    response.headers, #type: ignore
+                                                                    response.status,
+                                                                    new_yeast.comparable_yeasts[i],
+                                                                    new_yeast)
+                if monothread :
+                    print("-> Success.")
+                self.treated_item += 1
+
             except : # Exception as e :
                 out_error_item_list.append(new_yeast)
                 traceback.print_exc()
+                self.treated_item += 1
 
-    def atomic_scrap(self, links: list[str], out_error_item_list : list[Yeast], out_item_list : list[Yeast]) -> None:
+    def recover_comparable_yeast_link(self, content : str | bytes, headers : dict[str, str], status_code : int, comparable_yeast : str, yeast : Yeast) -> str:
+        if status_code == 301 :
+            location = headers["Location"]
+            url = f"https://beermaverick.com{location}"
+            return url
+
+        # Some of them are not redirected an land on the realpage ... for some reason
+        elif status_code == 200 :
+            soup = bs4.BeautifulSoup(content, "html.parser")
+            raw_link = soup.find("link", attrs={"rel" : "canonical"})
+            # We also have false positives here !
+            if raw_link.attrs["href"] !=  "https://beermaverick.com/yeasts/" :#type: ignore
+                url =  raw_link.attrs["href"] #type: ignore
+                return url #type: ignore
+            else :
+                yeast.add_parsing_error("Caught broken link in comparable yeasts !")
+                return comparable_yeast.split("yid=")[-1]
+        else :
+            yeast.add_parsing_error("Caught broken link in comparable yeasts !")
+            return comparable_yeast.split("yid=")[-1]
+
+    def atomic_scrap(self, links: list[str], out_error_item_list : list[Yeast], out_item_list : list[Yeast], monothread : bool = False) -> None:
         """Atomic function used by asynchronous executers (threads).
            Returns two output lists :
            * out_error_item_list : list of rejected objects (caused by a hard issue, like http connection failing/etc)
@@ -218,11 +283,18 @@ class YeastScraper(BaseScraper[Yeast]) :
 
             new_yeast = Yeast(link=link)
 
+            if monothread :
+                print(f"Parsing link : {link}")
+
             # Critical error, reject data
             response = self.request_client.get(link) #type: ignore
             if response.status_code != 200 :
                 new_yeast.add_parsing_error(str(response))
                 out_error_item_list.append(new_yeast)
+
+                if monothread :
+                    print("-> Failed.")
+                self.treated_item += 1
                 continue
 
             try:
@@ -230,9 +302,27 @@ class YeastScraper(BaseScraper[Yeast]) :
                 self.parse_yeast_item_from_page(parser, new_yeast, error_list)
                 out_item_list.append(new_yeast)
 
+                if len(new_yeast.comparable_yeasts) > 0 :
+                    for i in range(0, len(new_yeast.comparable_yeasts)) :
+                        url = f"https://beermaverick.com{new_yeast.comparable_yeasts[i]}"
+
+                        # This call is being redirected by server, we just want to map the redirected address in lieu and place of
+                        # the short url; so that we can use the unique url as a key later to replace each yeast per a unique id in the catalogue.
+                        response = self.request_client.get(url, allow_redirects=False) #type: ignore
+                        new_yeast.comparable_yeasts[i] = self.recover_comparable_yeast_link(response.content,
+                                                                                            response.headers, #type: ignore
+                                                                                            response.status_code,
+                                                                                            new_yeast.comparable_yeasts[i],
+                                                                                            new_yeast)
+                if monothread :
+                    print("-> Success.")
+                self.treated_item += 1
+
             except : # Exception as e :
                 out_error_item_list.append(new_yeast)
                 traceback.print_exc()
+                self.treated_item += 1
+
 
     def parse_yeast_item_from_page(self, parser : bs4.BeautifulSoup, yeast : Yeast, error_list : list[str]) -> None :
         name_node = parser.find("h1", attrs={"class" : "entry-title"})
