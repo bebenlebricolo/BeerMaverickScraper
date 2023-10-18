@@ -114,6 +114,8 @@ class HopScraper(BaseScraper[Hop]) :
         if self.async_client == None :
             print("/!\\ Warning : no session found for async http requests, creating a new one.")
             self.async_client = aiohttp.ClientSession()
+        elif self.async_client.closed :
+            self.async_client = aiohttp.ClientSession()
 
         matrix = parallel.spread_load_for_parallel(links, num_tasks)
         if num_tasks == 1 :

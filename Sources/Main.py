@@ -6,13 +6,18 @@ from pathlib import Path
 import argparse
 import uuid
 
+import google.cloud.firestore as fstore         #type: ignore
+from google.cloud.exceptions import Conflict    #type: ignore
+from google.oauth2 import service_account       #type: ignore
+from google.auth.credentials import Credentials #type: ignore
+
 import time
 import requests
 from requests.adapters import HTTPAdapter
 
 from bs4 import BeautifulSoup
 import asyncio
-from typing import Any
+from typing import Any, TypeVar
 
 from threading import Thread
 
@@ -23,27 +28,16 @@ from .Models.Yeast import Yeast
 # from .Models import Water
 # from .Models import Fermentable
 
+from .Utils.parallel import spread_load_for_parallel
+from .Utils.directories import Directories
+from .Utils.console import ConsoleChars
+
 from .ProgressBar import draw_progress_bar, print_buffer
 
 from .BaseScraper import BaseScraper
 from .HopScraper import HopScraper
 from .YeastScraper import YeastScraper
-#from .FermentableScraper import FermentablePageScrapper
-
-class Directories :
-    SCRIPT_DIR = Path(__file__).parent
-    CACHE_DIR = SCRIPT_DIR.joinpath(".cache")
-    EXTRACTED_DIR = CACHE_DIR.joinpath("extracted")
-    PROCESSED_DIR = CACHE_DIR.joinpath("processed")
-
-    @staticmethod
-    def ensure_cache_directory_exists():
-        Directories.ensure_directory_exists(Directories.CACHE_DIR)
-
-    @staticmethod
-    def ensure_directory_exists(dirpath : Path):
-        if not dirpath.exists() :
-            dirpath.mkdir(parents=True)
+#from .FermentableScraper import FermentablePageScraper
 
 
 def retrieve_links_from_sitemap() -> list[str] :
@@ -85,21 +79,22 @@ def scrap_hops(hops_links : list[str], scraper : HopScraper, use_threads : bool 
         for hop in hops :
             hops_links.remove(hop.link)
 
-    report_loop_thread : Thread
-    if max_jobs != 1 and len(hops_links) > 0 :
-        report_loop_thread = Thread(target=report_loop, args=(scraper, hops_links))
-        report_loop_thread.start()
-
     # Only scrap what's necessary to limit load of the server
     if len(hops_links) > 0 :
+        print("Parsing hops.")
+        report_loop_thread : Thread
+        progress_accessor = ScraperProgressAccessor(scraper)
+        report_loop_thread = Thread(target=report_progress_threaded, args=(progress_accessor, len(hops_links)))
+        report_loop_thread.start()
+
         scraped_hops = _scrap_hops_from_website(hops_links, scraper, multi_threaded=use_threads, max_jobs=max_jobs)
         hops += scraped_hops
+
+        report_loop_thread.join()
     else :
         print("Hop parsing : no hop to parse, all done !")
     write_hops_json_to_disk(hops_filepath, hops)
 
-    if max_jobs != 1 and len(hops_links) > 0:
-        report_loop_thread.join() #type: ignore
 
     return hops
 
@@ -141,6 +136,38 @@ def write_hops_json_to_disk(filepath : Path, hops : list[Hop]):
         json.dump(json_content, file, indent=4)
 
 
+class ProgressReportAccessor:
+    def get(self) -> int :
+        return 0
+
+class ScraperProgressAccessor(ProgressReportAccessor):
+    scraper : BaseScraper[Any]
+    def __init__(self, scraper: BaseScraper[Any]) -> None:
+        self.scraper = scraper
+
+    def get(self) -> int:
+        return self.scraper.treated_item
+
+class AsyncSafeCounter(ProgressReportAccessor):
+    data : int = 0
+    locked : bool = False
+    def __init__(self, data : int = 0) -> None:
+        self.data = data
+
+    def get(self) -> int:
+        return self.data
+
+    def increment(self) :
+        while self.locked :
+            pass
+        self.locked = True
+        self.data += 1
+        self.locked = False
+
+
+def scraper_elem_count_accessor(scraper : BaseScraper[Any]) -> int :
+    return scraper.treated_item
+
 def scrap_yeasts(yeasts_links : list[str], scraper : YeastScraper, use_threads : bool = False, max_jobs : int = 0, force : bool = False) -> list[Yeast]:
     # Retrieving Yeasts from cache
     yeasts : list[Yeast] = []
@@ -151,21 +178,24 @@ def scrap_yeasts(yeasts_links : list[str], scraper : YeastScraper, use_threads :
             yeasts_links.remove(yeast.link)
 
 
-    report_loop_thread : Thread
-    if max_jobs != 1 and len(yeasts_links) > 0 :
-        report_loop_thread = Thread(target=report_loop, args=(scraper, yeasts_links))
-        report_loop_thread.start()
 
     # Only scrap what's necessary to limit load of the server
     if len(yeasts_links) > 0 :
+        print("Parsing yeasts.")
+
+        report_loop_thread : Thread
+        progress_accessor = ScraperProgressAccessor(scraper)
+        report_loop_thread = Thread(target=report_progress_threaded, args=(progress_accessor, len(yeasts_links)))
+        report_loop_thread.start()
+
         scraped_yeasts = _scrap_yeasts_from_website(yeasts_links, scraper, multi_threaded=use_threads, max_jobs=max_jobs)
         yeasts += scraped_yeasts
+
+        report_loop_thread.join()
     else :
         print("Yeast parsing : no yeast to parse, all done !")
     write_yeasts_json_to_disk(yeasts_filepath, yeasts)
 
-    if max_jobs != 1 and len(yeasts_links) > 0:
-        report_loop_thread.join() #type: ignore
 
     return yeasts
 
@@ -205,7 +235,7 @@ def write_yeasts_json_to_disk(filepath : Path, yeasts : list[Yeast]):
     with open(filepath, "w") as file :
         json.dump(json_content, file, indent=4)
 
-def report_loop(scraper : BaseScraper[Any], links : list[str]) :
+def report_scrap_loop(scraper : BaseScraper[Any], links : list[str]) :
     old_treated_elem_count = 0
 
     # Give the scraper some time before it actually starts processing anything
@@ -232,7 +262,6 @@ class CategorizedLinks :
     water : list[str]       = field(default_factory=list[str])
     styles : list[str]      = field(default_factory=list[str])
 
-
 def split_links_by_category(links : list[str]) -> CategorizedLinks :
     cat_links = CategorizedLinks()
     for link in links :
@@ -253,18 +282,12 @@ def split_links_by_category(links : list[str]) -> CategorizedLinks :
             continue
     return cat_links
 
-
 def main(args : list[str]):
-    bold_ansicode = "\033[1m"
-    underline_ansicode = "\033[4m"
-    bold_underline = f"{bold_ansicode}{underline_ansicode}"
-    normal_ansicode = "\033[0m"
-    italic_ansicode = "\033[3m"
-    bold_underline_italic = f"{bold_underline}{italic_ansicode}"
-    parser = argparse.ArgumentParser(description=f"{bold_underline_italic}BeerMaverick data scraping toolset{normal_ansicode} : "
-                                     f"This program automatically performs http requests to the excellent {bold_underline_italic}https://beermaverick.com{normal_ansicode} website "
-                                     f"(credits to {bold_ansicode}@Chris Cagle{normal_ansicode} for this) and tries to recover brewing data such as {italic_ansicode}yeasts, hops, water profiles, beer styles and fermentables{normal_ansicode}. "
-                                     f"This is very helpful in order to analyse {italic_ansicode}data consistency, broken links, and perform statistical analysis later on{normal_ansicode}."
+
+    parser = argparse.ArgumentParser(description=f"{ConsoleChars.bdunit_ansi}BeerMaverick data scraping toolset{ConsoleChars.no_ansi} : "
+                                     f"This program automatically performs http requests to the excellent {ConsoleChars.bdunit_ansi}https://beermaverick.com{ConsoleChars.no_ansi} website "
+                                     f"(credits to {ConsoleChars.bd_ansi}@Chris Cagle{ConsoleChars.it_ansi} for this) and tries to recover brewing data such as {ConsoleChars.it_ansi}yeasts, hops, water profiles, beer styles and fermentables{ConsoleChars.no_ansi}. "
+                                     f"This is very helpful in order to analyse {ConsoleChars.it_ansi}data consistency, broken links, and perform statistical analysis later on{ConsoleChars.no_ansi}."
                                      "    ...   (Yes, I had fun with control characters !)")
 
     parser.add_argument("-j","--jobs",
@@ -281,10 +304,17 @@ def main(args : list[str]):
                         required=False,
                         default="False",
                         help="If set, cache directories won't be used and process will reprocess all data as if it was the first time using it.")
+
+    parser.add_argument("-u","--upload",
+                        required=False,
+                        default="False",
+                        help="If set, will try to upload data to distant database, if provided.")
+
     params = parser.parse_args(args[1:])
     max_jobs = int(params.jobs)
     use_threads = params.thread.lower() == "true"
     force = params.force.lower() == "true"
+    upload = params.upload.lower() == "true"
 
     Directories.ensure_directory_exists(Directories.EXTRACTED_DIR)
     Directories.ensure_directory_exists(Directories.PROCESSED_DIR)
@@ -318,7 +348,7 @@ def main(args : list[str]):
     ########################## Hops parsing ##########################
     ##################################################################
 
-    hops =scrap_hops(categorized_links.hops, hop_scraper, use_threads, max_jobs, force)
+    hops = scrap_hops(categorized_links.hops, hop_scraper, use_threads, max_jobs, force)
 
     ##################################################################
     ######################## Yeasts parsing ##########################
@@ -329,7 +359,9 @@ def main(args : list[str]):
     yeasts = scrap_yeasts(categorized_links.yeasts, yeast_scraper, use_threads, max_jobs, force)
 
 
-    # Post process data
+    ##################################################################
+    ######################## Yeasts parsing ##########################
+    ##################################################################
     for hop in hops :
         if hop.id == "" :
             hop.id = str(uuid.uuid4())
@@ -344,6 +376,11 @@ def main(args : list[str]):
                 hop.substitutes[i] = target[0].id
 
     write_hops_json_to_disk(Directories.PROCESSED_DIR.joinpath("hops.json"), hops)
+
+
+    ##################################################################
+    ##################### Yeasts post-processing #####################
+    ##################################################################
 
     for yeast in yeasts :
         if yeast.id == "" :
@@ -362,10 +399,110 @@ def main(args : list[str]):
                 # So we'll need to find a solution for that.
                 print(f"Yeast : \"{yeast.name}\" with link : {yeast.link} has issues in comparable yeasts : \"{linked_yeast}\"")
 
+    print("Dumping post-processed yeasts to disk.")
     write_yeasts_json_to_disk(Directories.PROCESSED_DIR.joinpath("yeasts.json"), yeasts)
+    print("-> Ok.")
 
+    ##################################################################
+    ########################### Data upload ##########################
+    ##################################################################
 
+    service_account_filepath = Directories.SECRETS_DIR.joinpath("service_account.json")
+    if not service_account_filepath.exists() :
+        print(f"/!\\ Warning : service account file does not exist at location : {service_account_filepath}. Cannot upload data to remote db.")
+        return 1
+
+    # Start bulk upload
+    if upload :
+        asyncio.run(upload_all_data_async(service_account_filepath,
+                                        hops,
+                                        yeasts,
+                                        max_jobs))
+    else :
+        print("Upload phase skipped.")
+
+    # Read back data from database
+    # doc = asyncio.run(hopsDb.document(hops[0].id).get())
+    # new_hop = Hop()
+    # new_hop.from_json(doc.to_dict())
+
+    print("Done.")
     return 0
+
+
+async def upload_all_data_async(sa_filepath : Path, hops : list[Hop], yeasts : list[Yeast], max_jobs : int) :
+    print(ConsoleChars.bd("\nData Upload") + ": Acquiring credentials for remote services ...")
+    credentials = service_account.Credentials.from_service_account_file() #type: ignore
+    fs_client = fstore.AsyncClient("druids-corner-cloud", credentials=credentials)
+    hopsDb = fs_client.collection("bmHops")                                         #type: ignore
+    yeastsDb = fs_client.collection("bmYeasts")
+
+    print("Uploading data to remote database ...")
+    print("Uploading hops ...")
+    tasks_input_list = spread_load_for_parallel(hops, max_jobs)
+    await upload_bulk_item_dispatch_async(tasks_input_list, hopsDb, len(hops))
+    print("-> Ok.")
+
+    print("Uploading yeasts ...")
+    tasks_input_list = spread_load_for_parallel(yeasts, max_jobs)
+    await upload_bulk_item_dispatch_async(tasks_input_list, yeastsDb, len(yeasts))
+    print("-> Ok.")
+
+
+def report_progress_threaded(accessor : ProgressReportAccessor, total_elem_count : int = 0) :
+    old_treated_elem_count = 0
+
+    # Give the scraper some time before it actually starts processing anything
+    time.sleep(0.5)
+
+    # Dummy line that'll get overwritten
+    print("", end="")
+    buffer = draw_progress_bar(0)
+    print_buffer(buffer)
+    while accessor.get() < total_elem_count :
+
+        # New item added event !
+        if old_treated_elem_count != accessor.get() :
+            old_treated_elem_count = accessor.get()
+            percentage = round(old_treated_elem_count * 100 / total_elem_count)
+            buffer = draw_progress_bar(percentage)
+            print_buffer(buffer)
+
+T = TypeVar("T", Hop, Yeast)
+async def upload_bulk_item_dispatch_async(tasks_input_list : list[list[T]], db : fstore.AsyncCollectionReference, total_elem_count : int = 0) :
+    """Dispatches input task matrix to individual async tasks"""
+    report_loop_thread : Thread
+    async_progress_accessor = AsyncSafeCounter()
+    report_loop_thread = Thread(target=report_progress_threaded, args=(async_progress_accessor, total_elem_count))
+    report_loop_thread.start()
+
+    async with asyncio.TaskGroup() as tg :
+        for inputs in tasks_input_list :
+            tg.create_task(upload_item_async(inputs, db, async_progress_accessor))
+
+    report_loop_thread.join()
+
+async def upload_item_async(items : list[T], db : fstore.AsyncCollectionReference, progress_accessor : AsyncSafeCounter) :
+    """Uploads a single item list, using internal event loop."""
+
+    # Hints : https://clemfournier.medium.com/make-crud-operations-on-firebase-firestore-in-python-d51ab6aa98af
+    for item in items :
+        try :
+            doc_ref = await db.document(item.id).get()
+            if doc_ref.exists :
+                # Replace document
+                write_option = fstore.WriteOption()
+                await db.document(item.id).update(item.to_json(), option=write_option)
+            else :
+                await db.add(item.to_json(), document_id = item.id)
+
+        except Exception as e:
+            # Item already exist
+            print(e)
+            pass
+        # Bump the uploaded items count safely (async safe)
+        progress_accessor.increment()
+
 
 
 

@@ -118,6 +118,9 @@ class YeastScraper(BaseScraper[Yeast]) :
         if self.async_client == None :
             print("/!\\ Warning : no session found for async http requests, creating a new one.")
             self.async_client = aiohttp.ClientSession()
+        elif self.async_client.closed :
+            self.async_client = aiohttp.ClientSession()
+
 
         # retry_strategy = Retry(
         #     total=3,
@@ -227,10 +230,10 @@ class YeastScraper(BaseScraper[Yeast]) :
                         # the short url; so that we can use the unique url as a key later to replace each yeast per a unique id in the catalogue.
                         response = await self.async_client.get(url, allow_redirects=False) #type: ignore
                         new_yeast.comparable_yeasts[i] = self.recover_comparable_yeast_link(await response.content.read(),
-                                                                    response.headers, #type: ignore
-                                                                    response.status,
-                                                                    new_yeast.comparable_yeasts[i],
-                                                                    new_yeast)
+                                                                                            response.headers, #type: ignore
+                                                                                            response.status,
+                                                                                            new_yeast.comparable_yeasts[i],
+                                                                                            new_yeast)
                 if monothread :
                     print("-> Success.")
                 self.treated_item += 1
@@ -297,11 +300,16 @@ class YeastScraper(BaseScraper[Yeast]) :
                         # This call is being redirected by server, we just want to map the redirected address in lieu and place of
                         # the short url; so that we can use the unique url as a key later to replace each yeast per a unique id in the catalogue.
                         response = self.request_client.get(url, allow_redirects=False) #type: ignore
-                        new_yeast.comparable_yeasts[i] = self.recover_comparable_yeast_link(response.content,
+                        candidate = self.recover_comparable_yeast_link(response.content,
                                                                                             response.headers, #type: ignore
                                                                                             response.status_code,
                                                                                             new_yeast.comparable_yeasts[i],
                                                                                             new_yeast)
+
+                        # Reject empty candidates, happens sometimes on some yeasts (the error actually comes from the website!)
+                        # E.g : https://beermaverick.com/yeast/wy2487-hella-bock-lager-wyeast/  -> Has an empty string
+                        if candidate != "" :
+                            new_yeast.comparable_yeasts[i] = candidate
                 if monothread :
                     print("-> Success.")
                 self.treated_item += 1
