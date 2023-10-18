@@ -44,3 +44,8 @@ It's not an exhaustive collection of tests by any means, but is helped stabilize
 ```bash
 pytest Sources
 ```
+
+# Push to remote database
+For now, this toolset has the required tools to push the newly extracted / built dataset to a remote Firestore database.
+In order to do so, one needs the right `service_account.json` file which embeds all necessary information for firebase / gcloud library to authenticate to Firebase services and access your online resources.
+This `service_account.json` file is located in a ignored folder : [.secrets](.secrets) which shall be created by the end user for the code to work as expected.

@@ -29,6 +29,8 @@ from .Models.Yeast import Yeast
 # from .Models import Fermentable
 
 from .Utils.parallel import spread_load_for_parallel
+from .Utils.directories import Directories
+from .Utils.console import ConsoleChars
 
 from .ProgressBar import draw_progress_bar, print_buffer
 
@@ -36,24 +38,6 @@ from .BaseScraper import BaseScraper
 from .HopScraper import HopScraper
 from .YeastScraper import YeastScraper
 #from .FermentableScraper import FermentablePageScraper
-
-class Directories :
-    SCRIPT_DIR = Path(__file__).parent
-    CACHE_DIR = SCRIPT_DIR.joinpath(".cache")
-    EXTRACTED_DIR = CACHE_DIR.joinpath("extracted")
-    PROCESSED_DIR = CACHE_DIR.joinpath("processed")
-
-    # Secrets directory resides at workspace folder
-    SECRETS_DIR = SCRIPT_DIR.joinpath("../.secrets")
-
-    @staticmethod
-    def ensure_cache_directory_exists():
-        Directories.ensure_directory_exists(Directories.CACHE_DIR)
-
-    @staticmethod
-    def ensure_directory_exists(dirpath : Path):
-        if not dirpath.exists() :
-            dirpath.mkdir(parents=True)
 
 
 def retrieve_links_from_sitemap() -> list[str] :
@@ -299,16 +283,11 @@ def split_links_by_category(links : list[str]) -> CategorizedLinks :
     return cat_links
 
 def main(args : list[str]):
-    bold_ansicode = "\033[1m"
-    underline_ansicode = "\033[4m"
-    bold_underline = f"{bold_ansicode}{underline_ansicode}"
-    normal_ansicode = "\033[0m"
-    italic_ansicode = "\033[3m"
-    bold_underline_italic = f"{bold_underline}{italic_ansicode}"
-    parser = argparse.ArgumentParser(description=f"{bold_underline_italic}BeerMaverick data scraping toolset{normal_ansicode} : "
-                                     f"This program automatically performs http requests to the excellent {bold_underline_italic}https://beermaverick.com{normal_ansicode} website "
-                                     f"(credits to {bold_ansicode}@Chris Cagle{normal_ansicode} for this) and tries to recover brewing data such as {italic_ansicode}yeasts, hops, water profiles, beer styles and fermentables{normal_ansicode}. "
-                                     f"This is very helpful in order to analyse {italic_ansicode}data consistency, broken links, and perform statistical analysis later on{normal_ansicode}."
+
+    parser = argparse.ArgumentParser(description=f"{ConsoleChars.bdunit_ansi}BeerMaverick data scraping toolset{ConsoleChars.no_ansi} : "
+                                     f"This program automatically performs http requests to the excellent {ConsoleChars.bdunit_ansi}https://beermaverick.com{ConsoleChars.no_ansi} website "
+                                     f"(credits to {ConsoleChars.bd_ansi}@Chris Cagle{ConsoleChars.it_ansi} for this) and tries to recover brewing data such as {ConsoleChars.it_ansi}yeasts, hops, water profiles, beer styles and fermentables{ConsoleChars.no_ansi}. "
+                                     f"This is very helpful in order to analyse {ConsoleChars.it_ansi}data consistency, broken links, and perform statistical analysis later on{ConsoleChars.no_ansi}."
                                      "    ...   (Yes, I had fun with control characters !)")
 
     parser.add_argument("-j","--jobs",
@@ -325,10 +304,17 @@ def main(args : list[str]):
                         required=False,
                         default="False",
                         help="If set, cache directories won't be used and process will reprocess all data as if it was the first time using it.")
+
+    parser.add_argument("-u","--upload",
+                        required=False,
+                        default="False",
+                        help="If set, will try to upload data to distant database, if provided.")
+
     params = parser.parse_args(args[1:])
     max_jobs = int(params.jobs)
     use_threads = params.thread.lower() == "true"
     force = params.force.lower() == "true"
+    upload = params.upload.lower() == "true"
 
     Directories.ensure_directory_exists(Directories.EXTRACTED_DIR)
     Directories.ensure_directory_exists(Directories.PROCESSED_DIR)
@@ -373,7 +359,9 @@ def main(args : list[str]):
     yeasts = scrap_yeasts(categorized_links.yeasts, yeast_scraper, use_threads, max_jobs, force)
 
 
-    # Post process data
+    ##################################################################
+    ######################## Yeasts parsing ##########################
+    ##################################################################
     for hop in hops :
         if hop.id == "" :
             hop.id = str(uuid.uuid4())
@@ -388,6 +376,11 @@ def main(args : list[str]):
                 hop.substitutes[i] = target[0].id
 
     write_hops_json_to_disk(Directories.PROCESSED_DIR.joinpath("hops.json"), hops)
+
+
+    ##################################################################
+    ##################### Yeasts post-processing #####################
+    ##################################################################
 
     for yeast in yeasts :
         if yeast.id == "" :
@@ -410,26 +403,40 @@ def main(args : list[str]):
     write_yeasts_json_to_disk(Directories.PROCESSED_DIR.joinpath("yeasts.json"), yeasts)
     print("-> Ok.")
 
+    ##################################################################
+    ########################### Data upload ##########################
+    ##################################################################
 
-    print("\nAcquiring credentials for remote services ...")
-    credentials = service_account.Credentials.from_service_account_file(Directories.SECRETS_DIR.joinpath("service_account.json")) #type: ignore
-    fs_client = fstore.AsyncClient("druids-corner-cloud", credentials=credentials)
-    hopsDb = fs_client.collection("bmHops")                                         #type: ignore
-    yeastsDb = fs_client.collection("bmYeasts")
-    print("-> Ok.")
+    service_account_filepath = Directories.SECRETS_DIR.joinpath("service_account.json")
+    if not service_account_filepath.exists() :
+        print(f"/!\\ Warning : service account file does not exist at location : {service_account_filepath}. Cannot upload data to remote db.")
+        return 1
 
-    if False :
-        # Start bulk upload
-        asyncio.run(upload_all_data_async(hops, yeasts, hopsDb, yeastsDb, max_jobs))
+    # Start bulk upload
+    if upload :
+        asyncio.run(upload_all_data_async(service_account_filepath,
+                                        hops,
+                                        yeasts,
+                                        max_jobs))
+    else :
+        print("Upload phase skipped.")
 
-    doc = asyncio.run(hopsDb.document(hops[0].id).get())
-    new_hop = Hop()
-    new_hop.from_json(doc.to_dict())
+    # Read back data from database
+    # doc = asyncio.run(hopsDb.document(hops[0].id).get())
+    # new_hop = Hop()
+    # new_hop.from_json(doc.to_dict())
 
+    print("Done.")
     return 0
 
 
-async def upload_all_data_async(hops : list[Hop], yeasts : list[Yeast], hopsDb : fstore.AsyncCollectionReference, yeastsDb : fstore.AsyncCollectionReference, max_jobs : int) :
+async def upload_all_data_async(sa_filepath : Path, hops : list[Hop], yeasts : list[Yeast], max_jobs : int) :
+    print(ConsoleChars.bd("\nData Upload") + ": Acquiring credentials for remote services ...")
+    credentials = service_account.Credentials.from_service_account_file() #type: ignore
+    fs_client = fstore.AsyncClient("druids-corner-cloud", credentials=credentials)
+    hopsDb = fs_client.collection("bmHops")                                         #type: ignore
+    yeastsDb = fs_client.collection("bmYeasts")
+
     print("Uploading data to remote database ...")
     print("Uploading hops ...")
     tasks_input_list = spread_load_for_parallel(hops, max_jobs)
