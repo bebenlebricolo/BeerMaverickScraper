@@ -35,7 +35,7 @@ from .ProgressBar import draw_progress_bar, print_buffer
 from .BaseScraper import BaseScraper
 from .HopScraper import HopScraper
 from .YeastScraper import YeastScraper
-#from .FermentableScraper import FermentablePageScrapper
+#from .FermentableScraper import FermentablePageScraper
 
 class Directories :
     SCRIPT_DIR = Path(__file__).parent
