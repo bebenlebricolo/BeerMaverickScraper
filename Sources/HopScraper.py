@@ -10,7 +10,7 @@ import bs4
 
 from .BaseScraper import BaseScraper, ItemPair
 from .Models.Hop import Hop, hop_attribute_from_str
-from .Models.Ranges import NumericRange
+from .Models.Ranges import NumericRange, RatioRange
 from .Models.BeerMaverick import HopApi as bmapi
 
 from .Utils import parallel
@@ -338,26 +338,36 @@ class HopScraper(BaseScraper[Hop]) :
             return None
         return header[0]
 
-    def parse_numeric_range(self, td : bs4.Tag, range : NumericRange, unit_char : str = "%") -> bool :
+    def parse_numeric_range(self, td : bs4.Tag, range : Optional[NumericRange], unit_char : str = "%") -> bool :
+        """Parses numerical range values from text fields. Instantiate the range object only if parsed data is sound."""
         values = td.contents[0].text.rstrip(unit_char).split("-")
 
         if len(values) < 1 or len(values) > 2:
             return False
 
+        min = 0.0
+        max = 0.0
         try :
             if len(values) == 1 :
-                range.min.value = float(values[0].strip())
-                range.max.value = range.min.value
+                min = float(values[0].strip())
+                max = min
             if len(values) == 2 :
-                range.min.value = float(values[0].strip())
-                range.max.value = float(values[1].strip())
+                min = float(values[0].strip())
+                max = float(values[1].strip())
         # Might fail if one of the values is not convertible to float (happens with some default values)
         # In some cases, numerical values are replaced by the "Unknown" keyword, which makes parsing more difficult
         except :
             return False
+
+        # Only instantiate this object if we haven't caught issue before, so that we are sure that
+        # the conveyed data is valid and sound before proceeding further.
+        if range == None :
+            range = NumericRange()
+        range.min.value = min
+        range.max.value = max
         return True
 
-    def parse_percentage_value(self, td : bs4.Tag, range : NumericRange) -> bool :
+    def parse_percentage_value(self, td : bs4.Tag, range : Optional[NumericRange]) -> bool :
         return self.parse_numeric_range(td, range, "%")
 
     def parse_brewing_values(self, parser : bs4.BeautifulSoup, hop : Hop) -> bool :
@@ -389,13 +399,27 @@ class HopScraper(BaseScraper[Hop]) :
                 if len(values) < 1 or len(values) > 2 :
                     hop.add_parsing_error("Caught unexpected content for Beta acids")
                     continue
-                hop.alpha_beta_ratio.min.value = values[0].strip()
-                hop.alpha_beta_ratio.max.value = values[1].strip()
+                min = values[0].strip()
+                max = values[1].strip()
+                if min == "" and max == "" :
+                    hop.add_parsing_error("Missing content for Beta acids")
+                    continue
+
+                # Only instantiate this object if parsed data is considered sound (not empty)
+                hop.alpha_beta_ratio = RatioRange()
+                hop.alpha_beta_ratio.min.value = min
+                hop.alpha_beta_ratio.max.value = max
                 continue
 
             if  "Hop Storage Index (HSI)" in th.contents[0].text:
                 values = td.contents[0].text.split("%")
-                hop.hop_storage_index = float(values[0].strip())
+                parsed = ""
+                try :
+                    parsed = float(values[0].strip())
+                    hop.hop_storage_index = parsed
+                except:
+                    hop.add_parsing_error("Cannot parse Hop Storage Index (HSI).")
+
                 continue
 
             if  "Co-Humulone as % of Alpha" in th.contents[0].text:
@@ -433,6 +457,30 @@ class HopScraper(BaseScraper[Hop]) :
                     hop.add_parsing_error("Caught invalid format for other oils")
                 continue
 
+
+        # A bit of diagnostic !
+        if hop.alpha_acids == None :
+            hop.add_parsing_error("No data for alpha acids")
+        if hop.beta_acids == None :
+            hop.add_parsing_error("No data for alpha acids")
+        if hop.alpha_beta_ratio == None :
+            hop.add_parsing_error("No data for alpha beta ratio")
+        if hop.hop_storage_index == None :
+            hop.add_parsing_error("No data for hop storage index")
+        if hop.co_humulone_normalized == None :
+            hop.add_parsing_error("No data for co humulone")
+        if hop.total_oils == None :
+            hop.add_parsing_error("No data for total oils")
+        if hop.myrcene == None :
+            hop.add_parsing_error("No data for myrcene")
+        if hop.humulene == None :
+            hop.add_parsing_error("No data for humulene")
+        if hop.caryophyllene == None :
+            hop.add_parsing_error("No data for caryophyllene")
+        if hop.farnesene == None :
+            hop.add_parsing_error("No data for farnesene")
+        if hop.other_oils == None :
+            hop.add_parsing_error("No data for other oils")
 
         return True
 
@@ -509,19 +557,31 @@ class HopScraper(BaseScraper[Hop]) :
             td_node : bs4.Tag = parent_node.find("td") #type: ignore
             if content == required[0] :
                 a_node = td_node.find("a")
-                txt = self.format_text(a_node.contents[0].text) #type: ignore
-                hop.purpose = hop_attribute_from_str(txt)
+                purpose = a_node.contents[0].text #type: ignore
+                if purpose == "" :
+                    txt = self.format_text(purpose)
+                    hop.purpose = hop_attribute_from_str(txt)
+                else :
+                    hop.add_parsing_error("No data for Hop Purpose")
 
             elif content == required[1] :
-                hop.country = td_node.contents[0].text
-                hop.country = self.format_text(hop.country)
+                country = td_node.contents[0].text
+                if country != "" :
+                    hop.country = self.format_text(country)
+                else :
+                    hop.add_parsing_error("No data for country")
 
             elif content == required[2] :
-                hop.international_code = td_node.contents[0].text
-                hop.international_code = self.format_text(hop.international_code)
+                icode = td_node.contents[0].text
+                if icode == "":
+                    hop.international_code = self.format_text(icode)
+                else :
+                    hop.add_parsing_error("No data for international code")
 
             elif content == required[3] :
-                hop.cultivar_id = td_node.contents[0].text
-                hop.cultivar_id = self.format_text(hop.cultivar_id)
-
+                cultivar_brand = td_node.contents[0].text
+                if cultivar_brand != "" :
+                    hop.cultivar_id = self.format_text(cultivar_brand)
+                else :
+                    hop.add_parsing_error("No data for cultivar / brand id")
         return True
