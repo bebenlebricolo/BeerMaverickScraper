@@ -293,23 +293,6 @@ class YeastScraper(BaseScraper[Yeast]) :
                 self.parse_yeast_item_from_page(parser, new_yeast, error_list)
                 out_item_list.append(new_yeast)
 
-                if len(new_yeast.comparable_yeasts) > 0 :
-                    for i in range(0, len(new_yeast.comparable_yeasts)) :
-                        url = f"https://beermaverick.com{new_yeast.comparable_yeasts[i]}"
-
-                        # This call is being redirected by server, we just want to map the redirected address in lieu and place of
-                        # the short url; so that we can use the unique url as a key later to replace each yeast per a unique id in the catalogue.
-                        response = self.request_client.get(url, allow_redirects=False) #type: ignore
-                        candidate = self.recover_comparable_yeast_link(response.content,
-                                                                                            response.headers, #type: ignore
-                                                                                            response.status_code,
-                                                                                            new_yeast.comparable_yeasts[i],
-                                                                                            new_yeast)
-
-                        # Reject empty candidates, happens sometimes on some yeasts (the error actually comes from the website!)
-                        # E.g : https://beermaverick.com/yeast/wy2487-hella-bock-lager-wyeast/  -> Has an empty string
-                        if candidate != "" :
-                            new_yeast.comparable_yeasts[i] = candidate
                 if monothread :
                     print("-> Success.")
                 self.treated_item += 1
@@ -350,7 +333,11 @@ class YeastScraper(BaseScraper[Yeast]) :
         bullet_nodes : list[bs4.Tag] = substitution_list_node.find_all("li")
         for bullet in bullet_nodes :
             a_node : bs4.Tag = bullet.find("a") # type: ignore
-            yeast.comparable_yeasts.append(self.format_text(a_node.attrs["href"]))
+            linked_yeast = self.format_text(a_node.attrs["href"])
+
+            # Reject empty references, happen sometimes on the webpages where a new bullet point is empty.
+            if linked_yeast != "":
+                yeast.comparable_yeasts.append(linked_yeast)
 
         return True
 

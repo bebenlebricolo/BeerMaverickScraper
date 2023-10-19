@@ -1,0 +1,139 @@
+{
+    "yeasts" :
+    [
+        {
+            "alias" : "ES-FOG",
+            "comment" :"codename not in link",
+            "link" : "https://beermaverick.com/yeast/foggy-london-ale-escarpment-labs/"
+        },
+        {
+            "alias" : "WY1068",
+            "comment" : "typo in the website",
+            "link" : "https://beermaverick.com/yeast/wy1968-london-esb-ale-wyeast/"
+        },
+        {
+            "alias" : "LAL-VERDANT",
+            "link" : "https://beermaverick.com/yeast/lallemand-lalbrew-verdant-ipa/"
+        },
+        {
+            "alias" : "B63",
+            "comment" : "whole in database",
+            "link" : "https://www.brewersfriend.com/yeasts/imperial-yeast-b63-monastic/"
+        },
+        {
+            "alias" : "LB_NE",
+            "comment" : "codename not in link",
+            "link" : "https://beermaverick.com/yeast/lalbrew-new-england-lallemand/"
+        },
+        {
+            "alias" : "GY107",
+            "comment" : "unknown yeast",
+            "link" : null
+        },
+        {
+            "alias" : "W-34/70",
+            "comment" : "codename not in link",
+            "link" : "https://beermaverick.com/yeast/w-34-70-saflager-w-34-70-fermentis/"
+        },
+        {
+            "alias" : "Lallemand Belle Saison",
+            "comment" : "codename not in link",
+            "link" : "https://beermaverick.com/yeast/lalbrew-belle-saison-lallemand/"
+        },
+        {
+            "alias" : "ECY29",
+            "comment" : "codename not in link",
+            "link" : "https://beermaverick.com/yeast/ecy029-north-east-ale-east-coast-yeast/"
+        },
+        {
+            "alias" : "ES-VT",
+            "comment" : "codename not in link",
+            "link" : "https://beermaverick.com/yeast/vermont-ale-escarpment-labs/"
+        },
+        {
+            "alias" : "WLP6860",
+            "comment" : "whole in database",
+            "link" : "https://www.whitelabs.com/yeast-single?id=230&type=YEAST"
+        },
+        {
+            "alias" : "Lalbrew Nottingham",
+            "comment" : "codename not in link",
+            "link" : "https://beermaverick.com/yeast/lalbrew-nottingham-lallemand/"
+        },
+        {
+            "alias" : "WLP025",
+            "comment" : "whole in database",
+            "link" : "https://www.whitelabs.com/yeast-single?id=116&style_type=0&type=YEAST"
+        },
+        {
+            "alias" : "WLP720",
+            "comment" : "whole in database",
+            "link" : "https://www.whitelabs.com/yeast-single?id=206&style_type=3&type=YEAST"
+        },
+        {
+            "alias" : "WY2450",
+            "comment" : "typo in the website",
+            "link" : "https://beermaverick.com/yeast/wy1450-dennys-favorite-50-ale-wyeast/"
+        },
+        {
+            "alias" : "WLP003",
+            "comment" : "whole in database",
+            "link" : "https://www.whitelabs.com/yeast-single?id=103&style_type=0&type=YEAST"
+        },
+        {
+            "alias" : "WLP515",
+            "comment" : "whole in database",
+            "link" : "https://www.whitelabs.com/yeast-single?id=156&style_type=5&type=YEAST"
+        },
+        {
+            "alias" : "Lallebrew Voss",
+            "comment" : "codename not in link",
+            "link" : "https://beermaverick.com/yeast/lalbrew-voss-lallemand/"
+        },
+        {
+            "alias" : "WLP650",
+            "comment" : "whole in database",
+            "link" : "https://www.whitelabs.com/yeast-single?id=185&style_type=7&type=YEAST"
+        },
+        {
+            "alias" : "WY2484",
+            "comment" : "doesn't exist",
+            "link" : null
+        },
+        {
+            "alias" : "WLP885",
+            "comment" : "whole in database",
+            "link" : "https://www.whitelabs.com/yeast-single?id=231&style_type=2&type=YEAST"
+        },
+        {
+            "alias" : "WL2124",
+            "comment" : "doesn't exist",
+            "link" : null
+        },
+        {
+            "alias" : "Lallemand Windsor",
+            "comment" : "codename not in link",
+            "link" : "https://beermaverick.com/yeast/lalbrew-windsor-lallemand/"
+        },
+        {
+            "alias" : "M31",
+            "comment" : "whole in database",
+            "link" : "https://mangrovejacks.com/products/belgian-tripel-m31-yeast-10g"
+        },
+        {
+            "alias" : "B51",
+            "comment" : "whole in database",
+            "link" : "https://www.brewersfriend.com/yeasts/imperial-yeast-b51-workhorse/"
+        },
+        {
+            "alias" : "Lallemand London ESB",
+            "comment" : "whole in database",
+            "link" : "https://www.lallemandbrewing.com/en/canada/product-details/london-esb-english-style-ale-yeast/"
+        },
+        {
+            "alias" : "WLP860",
+            "comment" : "whole in database",
+            "link" : "https://www.whitelabs.com/yeast-single?id=230&type=YEAST"
+        }
+    ]
+}

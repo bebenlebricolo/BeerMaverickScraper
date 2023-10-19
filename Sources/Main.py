@@ -390,14 +390,20 @@ def main(args : list[str]):
         for i in range(0, len(yeast.comparable_yeasts)):
             # Data originally contains a link that points to the substitute hop,
             # we'll change that for its UUID instead, which is closer to what we'll find in a regular database
-            linked_yeast = yeast.comparable_yeasts[i]
-            target = [item for item in yeasts if item.link == linked_yeast]
+            linked_yeast_name = yeast.comparable_yeasts[i]
+
+            target_link = [item for item in categorized_links.yeasts if linked_yeast_name.lower() in item]
+            if len(target_link) == 0:
+                print(f"Yeast : \"{yeast.name}\" with link : {yeast.link} has issues in comparable yeasts : \"{linked_yeast_name}\"")
+                continue
+
+            target = [item for item in yeasts if item.link == target_link[0]]
             if len(target) != 0 :
                 yeast.comparable_yeasts[i] = target[0].id
             else :
                 # We are stumbling on "bad" links : for some linked yeasts, there are issues with the website api calls and redirection did not work
                 # So we'll need to find a solution for that.
-                print(f"Yeast : \"{yeast.name}\" with link : {yeast.link} has issues in comparable yeasts : \"{linked_yeast}\"")
+                print(f"Yeast : \"{yeast.name}\" with link : {yeast.link} has issues in comparable yeasts : \"{linked_yeast_name}\"")
 
     print("Dumping post-processed yeasts to disk.")
     write_yeasts_json_to_disk(Directories.PROCESSED_DIR.joinpath("yeasts.json"), yeasts)
