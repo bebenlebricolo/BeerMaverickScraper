@@ -9,6 +9,7 @@ class TestHopModelSerialization(unittest.TestCase):
         hop.name = "Test hop"
         hop.link = "https://beermaverick.com/hop/apollo/"
         hop.purpose = HopAttribute.Aromatic
+        hop.ownership = "Someone"
         hop.country = "don't know"
         hop.international_code = "maybe"
         hop.cultivar_id = "perhaps"

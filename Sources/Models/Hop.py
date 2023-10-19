@@ -108,9 +108,9 @@ class Hop(ScrapedObject) :
     radar_chart : Optional[RadarChart] = field(default=None)
 
     def __eq__(self, other: object) -> bool:
-
         if type(self) != type(other) :
             return False
+
         other = cast(Hop, other)
         self = cast(Hop, self)
         identical = True
