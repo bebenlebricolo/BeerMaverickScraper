@@ -20,7 +20,7 @@ def hop_attribute_from_str(input : str) -> HopAttribute :
         case HopAttribute.Bittering.value :
             return HopAttribute.Bittering
 
-        case HopAttribute.Aromatic.value :
+        case HopAttribute.Aromatic.value | "Aroma":
             return HopAttribute.Aromatic
 
         case HopAttribute.Hybrid.value | "Dual" :
@@ -76,6 +76,7 @@ class Hop(ScrapedObject) :
     country :               Optional[str]  = field(default=None)
     international_code :    Optional[str]  = field(default=None)
     cultivar_id :           Optional[str]  = field(default=None)
+    ownership:              Optional[str]  = field(default=None)
     origin_txt :            str            = field(default_factory=str)
     flavor_txt :            str            = field(default_factory=str)
     tags :                  list[str]      = field(default_factory=list)
@@ -120,6 +121,7 @@ class Hop(ScrapedObject) :
         identical &= self.purpose == other.purpose
         identical &= self.country == other.country
         identical &= self.international_code == other.international_code
+        identical &= self.ownership == other.ownership
         identical &= self.cultivar_id == other.cultivar_id
         identical &= self.origin_txt == other.origin_txt
         identical &= self.flavor_txt == other.flavor_txt
@@ -149,6 +151,7 @@ class Hop(ScrapedObject) :
             "purpose" : self.purpose.value,
             "country" : self.country,
             "internationalCode" : self.international_code,
+            "ownership" : self.ownership,
             "cultivarId" : self.cultivar_id,
             "originTxt" : self.origin_txt,
             "flavorTxt" : self.flavor_txt,
@@ -179,10 +182,14 @@ class Hop(ScrapedObject) :
         self.name = self._read_prop("name", content, "")
         self.id = self._read_prop("id", content, "")
         self.link = self._read_prop("link", content, "")
-        self.purpose = hop_attribute_from_str(self._read_prop("purpose", content, ""))
-        self.country = self._read_prop("country", content, "")
-        self.international_code = self._read_prop("internationalCode", content, "")
-        self.cultivar_id = self._read_prop("cultivarId", content, "")
+        self.purpose = hop_attribute_from_str(self._read_prop("purpose", content, HopAttribute.Bittering))
+
+        # Optionals, direct read either return a value or None, so we're good with this
+        self.country = content["country"]
+        self.international_code = content["internationalCode"]
+        self.cultivar_id = content["cultivarId"]
+        self.ownership = content["ownership"]
+
         self.origin_txt = self._read_prop("originTxt", content, "")
         self.flavor_txt = self._read_prop("flavorTxt", content, "")
         self.tags = self._read_prop("tags", content, "")

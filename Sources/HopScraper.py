@@ -338,12 +338,12 @@ class HopScraper(BaseScraper[Hop]) :
             return None
         return header[0]
 
-    def parse_numeric_range(self, td : bs4.Tag, range : Optional[NumericRange], unit_char : str = "%") -> bool :
+    def parse_numeric_range(self, td : bs4.Tag, unit_char : str = "%") -> Optional[NumericRange]  :
         """Parses numerical range values from text fields. Instantiate the range object only if parsed data is sound."""
         values = td.contents[0].text.rstrip(unit_char).split("-")
 
         if len(values) < 1 or len(values) > 2:
-            return False
+            return None
 
         min = 0.0
         max = 0.0
@@ -357,18 +357,17 @@ class HopScraper(BaseScraper[Hop]) :
         # Might fail if one of the values is not convertible to float (happens with some default values)
         # In some cases, numerical values are replaced by the "Unknown" keyword, which makes parsing more difficult
         except :
-            return False
+            return None
 
         # Only instantiate this object if we haven't caught issue before, so that we are sure that
         # the conveyed data is valid and sound before proceeding further.
-        if range == None :
-            range = NumericRange()
+        range = NumericRange()
         range.min.value = min
         range.max.value = max
-        return True
+        return range
 
-    def parse_percentage_value(self, td : bs4.Tag, range : Optional[NumericRange]) -> bool :
-        return self.parse_numeric_range(td, range, "%")
+    def parse_percentage_value(self, td : bs4.Tag) -> Optional[NumericRange] :
+        return self.parse_numeric_range(td, "%")
 
     def parse_brewing_values(self, parser : bs4.BeautifulSoup, hop : Hop) -> bool :
         table = parser.find("table", attrs={"class" : "brewvalues"})
@@ -385,13 +384,15 @@ class HopScraper(BaseScraper[Hop]) :
                 continue
 
             if  "Alpha Acid % (AA)" in th.contents[0].text:
-                if not self.parse_percentage_value(td, hop.alpha_acids) :
-                    hop.add_parsing_error("Caught unexpected content for Alpha acids")
+                hop.alpha_acids = self.parse_percentage_value(td)
+                if hop.alpha_acids == None :
+                    hop.add_parsing_error("Could not parse values for alpha acids")
                 continue
 
             if  "Beta Acid %" in th.contents[0].text:
-                if not self.parse_percentage_value(td, hop.beta_acids):
-                    hop.add_parsing_error("Caught unexpected content for Beta acids")
+                hop.beta_acids = self.parse_percentage_value(td)
+                if hop.beta_acids == None :
+                    hop.add_parsing_error("Could not parse values for beta acids")
                 continue
 
             if  "Alpha-Beta Ratio" in th.contents[0].text:
@@ -423,64 +424,71 @@ class HopScraper(BaseScraper[Hop]) :
                 continue
 
             if  "Co-Humulone as % of Alpha" in th.contents[0].text:
-                if not self.parse_percentage_value(td, hop.co_humulone_normalized) :
+                hop.co_humulone_normalized = self.parse_percentage_value(td)
+                if not hop.co_humulone_normalized:
                     hop.add_parsing_error("Caught unexpected content for Co-humulone")
                 continue
 
             if "Total Oils (mL/100g)" in th.contents[0].text :
-                if not self.parse_numeric_range(td, hop.total_oils, "mL") :
+                hop.total_oils = self.parse_numeric_range(td, "mL")
+                if not hop.total_oils:
                     hop.add_parsing_error("Caught invalid format for total oils")
                 continue
 
             if "Myrcene" in th.contents[0].text:
-                if not self.parse_percentage_value(td, hop.myrcene):
+                hop.myrcene = self.parse_percentage_value(td)
+                if not hop.myrcene:
                     hop.add_parsing_error("Caught invalid format for Myrcene")
                 continue
 
             if "Humulene" in th.contents[0].text:
-                if not self.parse_percentage_value(td, hop.humulene):
+                hop.humulene = self.parse_percentage_value(td)
+                if not hop.humulene:
                     hop.add_parsing_error("Caught invalid format for Humulene")
                 continue
 
             if "Caryophyllene" in th.contents[0].text:
-                if not self.parse_percentage_value(td, hop.caryophyllene):
+                hop.caryophyllene = self.parse_percentage_value(td)
+                if not hop.caryophyllene :
                     hop.add_parsing_error("Caught invalid format for Caryophyllene")
                 continue
 
             if "Farnesene" in th.contents[0].text:
-                if not self.parse_percentage_value(td, hop.farnesene):
+                hop.farnesene = self.parse_percentage_value(td)
+                if not hop.farnesene:
                     hop.add_parsing_error("Caught invalid format for Farnesene")
                 continue
 
             if "All Others" in th.contents[0].text:
-                if not self.parse_percentage_value(td, hop.other_oils) :
+                hop.other_oils = self.parse_percentage_value(td)
+                if not hop.other_oils:
                     hop.add_parsing_error("Caught invalid format for other oils")
                 continue
 
 
         # A bit of diagnostic !
         if hop.alpha_acids == None :
-            hop.add_parsing_error("No data for alpha acids")
+            hop.add_parsing_error("No data for Alpha Acids")
         if hop.beta_acids == None :
-            hop.add_parsing_error("No data for alpha acids")
+            hop.add_parsing_error("No data for Beta Acids")
         if hop.alpha_beta_ratio == None :
-            hop.add_parsing_error("No data for alpha beta ratio")
+            hop.add_parsing_error("No data for Alpha Beta Ratio")
         if hop.hop_storage_index == None :
-            hop.add_parsing_error("No data for hop storage index")
+            hop.add_parsing_error("No data for Hop Storage Index")
         if hop.co_humulone_normalized == None :
             hop.add_parsing_error("No data for co humulone")
         if hop.total_oils == None :
-            hop.add_parsing_error("No data for total oils")
+            hop.add_parsing_error("No data for Total Oils")
         if hop.myrcene == None :
-            hop.add_parsing_error("No data for myrcene")
+            hop.add_parsing_error("No data for Myrcene")
         if hop.humulene == None :
-            hop.add_parsing_error("No data for humulene")
+            hop.add_parsing_error("No data for Humulene")
         if hop.caryophyllene == None :
-            hop.add_parsing_error("No data for caryophyllene")
+            hop.add_parsing_error("No data for Caryophyllene")
         if hop.farnesene == None :
-            hop.add_parsing_error("No data for farnesene")
+            hop.add_parsing_error("No data for Farnesene")
         if hop.other_oils == None :
-            hop.add_parsing_error("No data for other oils")
+            hop.add_parsing_error("No data for Other Oils")
 
         return True
 
@@ -545,7 +553,8 @@ class HopScraper(BaseScraper[Hop]) :
             "Purpose:",
             "Country:",
             "International Code:",
-            "Cultivar/Brand ID:"
+            "Cultivar/Brand ID:",
+            "Ownership:"
         ]
 
         for th in all_th :
@@ -558,30 +567,54 @@ class HopScraper(BaseScraper[Hop]) :
             if content == required[0] :
                 a_node = td_node.find("a")
                 purpose = a_node.contents[0].text #type: ignore
-                if purpose == "" :
+                if purpose != "" :
                     txt = self.format_text(purpose)
                     hop.purpose = hop_attribute_from_str(txt)
                 else :
-                    hop.add_parsing_error("No data for Hop Purpose")
+                    hop.add_parsing_error("Empty data for Hop Purpose")
 
             elif content == required[1] :
                 country = td_node.contents[0].text
                 if country != "" :
                     hop.country = self.format_text(country)
                 else :
-                    hop.add_parsing_error("No data for country")
+                    hop.add_parsing_error("Empty data for Country")
 
             elif content == required[2] :
                 icode = td_node.contents[0].text
-                if icode == "":
+                if icode != "":
                     hop.international_code = self.format_text(icode)
                 else :
-                    hop.add_parsing_error("No data for international code")
+                    hop.add_parsing_error("Empty data for International Code")
 
             elif content == required[3] :
                 cultivar_brand = td_node.contents[0].text
                 if cultivar_brand != "" :
                     hop.cultivar_id = self.format_text(cultivar_brand)
                 else :
-                    hop.add_parsing_error("No data for cultivar / brand id")
+                    hop.add_parsing_error("Empty data for Cultivar / Brand Id")
+
+            elif content == required[4] :
+                ownership = td_node.contents[0].text
+                if ownership != "" :
+                    hop.ownership = self.format_text(ownership)
+                else :
+                    hop.add_parsing_error("Empty data for Ownership")
+
+        # A bit of diagnostic here as well
+        # Most of the values are not mandatory, this is not considered as errors but
+        # adding that to the parsing errors will help sanitize the dataset further later
+        if not hop.country:
+            hop.add_parsing_error("No data for Country")
+        if not hop.purpose:
+            hop.add_parsing_error("No data for Purpose")
+        if not hop.international_code:
+            hop.add_parsing_error("No data for International Code")
+        if not hop.cultivar_id:
+            hop.add_parsing_error("No data for Cultivar / Brand Id")
+
+        # Ownership is not a data that's often found in Hop pages,
+        if not hop.ownership:
+            hop.add_parsing_error("No data for Ownership")
+
         return True
