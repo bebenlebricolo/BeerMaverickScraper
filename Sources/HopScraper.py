@@ -566,9 +566,9 @@ class HopScraper(BaseScraper[Hop]) :
             td_node : bs4.Tag = parent_node.find("td") #type: ignore
             if content == required[0] :
                 a_node = td_node.find("a")
-                purpose = a_node.contents[0].text #type: ignore
+                purpose : str = a_node.contents[0].text #type: ignore
                 if purpose != "" :
-                    txt = self.format_text(purpose)
+                    txt = self.format_text(purpose) #type: ignore
                     hop.purpose = hop_attribute_from_str(txt)
                 else :
                     hop.add_parsing_error("Empty data for Hop Purpose")

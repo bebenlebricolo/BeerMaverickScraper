@@ -176,6 +176,26 @@ class Hop(ScrapedObject) :
         content.update(super().to_json())
         return content
 
+    def parse_numeric_range(self, key : str, content : dict[str, Any]) -> Optional[NumericRange]:
+        try :
+            if key in content and content[key] != None:
+                data = NumericRange()
+                data.from_json(content[key])
+                return data
+        except :
+            return None
+        return None
+
+    def parse_ratio_range(self, key : str, content : dict[str, Any]) -> Optional[RatioRange]:
+        try :
+            if key in content and content[key] != None:
+                data = RatioRange()
+                data.from_json(content[key])
+                return data
+        except :
+            return None
+        return None
+
     def from_json(self, content : dict[str, Any]) -> None :
         super().from_json(content)
 
@@ -194,53 +214,26 @@ class Hop(ScrapedObject) :
         self.flavor_txt = self._read_prop("flavorTxt", content, "")
         self.tags = self._read_prop("tags", content, "")
 
-        if "alphaAcids" in content :
-            self.alpha_acids = NumericRange()
-            self.alpha_acids.from_json(content["alphaAcids"])
-
-        if "betaAcids" in content :
-            self.beta_acids = NumericRange()
-            self.beta_acids.from_json(content["betaAcids"])
-
-        if "alphaBetaRatio" in content :
-            self.alpha_beta_ratio = RatioRange()
-            self.alpha_beta_ratio.from_json(content["alphaBetaRatio"])
+        self.alpha_acids = self.parse_numeric_range("alphaAcids", content)
+        self.beta_acids = self.parse_numeric_range("betaAcids", content)
+        self.alpha_beta_ratio = self.parse_ratio_range("alphaBetaRatio", content)
 
         self.hop_storage_index = self._read_prop("hopStorageIndex", content, 80)
+        self.co_humulone_normalized = self.parse_numeric_range("coHumuloneNormalized", content)
+        self.total_oils = self.parse_numeric_range("totalOils", content)
+        self.myrcene = self.parse_numeric_range("myrcene", content)
+        self.humulene = self.parse_numeric_range("humulene", content)
+        self.caryophyllene = self.parse_numeric_range("caryophyllene", content)
+        self.farnesene = self.parse_numeric_range("farnesene", content)
+        self.other_oils = self.parse_numeric_range("otherOils", content)
 
-        if "coHumuloneNormalized" :
-            self.co_humulone_normalized = NumericRange()
-            self.co_humulone_normalized.from_json(content["coHumuloneNormalized"])
-
-        if "totalOils" in content :
-            self.total_oils = NumericRange()
-            self.total_oils.from_json(content["totalOils"])
-
-        if "myrcene" in content :
-            self.myrcene = NumericRange()
-            self.myrcene.from_json(content["myrcene"])
-
-        if "humulene" in content :
-            self.humulene = NumericRange()
-            self.humulene.from_json(content["humulene"])
-
-        if "caryophyllene" in content:
-            self.caryophyllene = NumericRange()
-            self.caryophyllene.from_json(content["caryophyllene"])
-
-        if "farnesene" in content:
-            self.farnesene = NumericRange()
-            self.farnesene.from_json(content["farnesene"])
-
-        if "otherOils" in content :
-            self.other_oils = NumericRange()
-            self.other_oils.from_json(content["otherOils"])
         self.beer_styles = self._read_prop("beerStyles", content, [])
         self.substitutes = self._read_prop("substitutes", content, [])
 
-        if "radarChart" in  content :
+        radar_chart_key = "radarChart"
+        if radar_chart_key in content and content[radar_chart_key] != None:
             self.radar_chart = RadarChart()
-            self.radar_chart.from_json(content["radarChart"])
+            self.radar_chart.from_json(content[radar_chart_key])
 
     def radar_chart_from_bmapi(self, api_model : bmapi.BMHopModel) :
         """Converts the radar chart from the api into an internal model and scan for all zeros.
