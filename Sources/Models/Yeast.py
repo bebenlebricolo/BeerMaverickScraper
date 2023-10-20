@@ -24,6 +24,7 @@ def str_to_flocculation(input : Optional[str]) -> Flocculation:
     data = [
         Flocculation.VeryLow,
         Flocculation.Low,
+        Flocculation.LowMedium,
         Flocculation.Medium,
         Flocculation.MediumHigh,
         Flocculation.High,
@@ -33,6 +34,10 @@ def str_to_flocculation(input : Optional[str]) -> Flocculation:
         if input.lower() == item.value.lower() :
             return item
 
+    # Some yeast has the "Medium-Low" tag, which is more or less "Low-Medium" in reverse (...).
+    # Dedicated corner case parsing here :)
+    if Flocculation.Medium.value.lower() in input.lower() and Flocculation.Low.value.lower() in input.lower():
+        return Flocculation.LowMedium
     return Flocculation.Unknown
 
 class Packaging(Enum) :
