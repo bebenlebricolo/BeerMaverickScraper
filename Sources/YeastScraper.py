@@ -10,7 +10,7 @@ from threading import Thread
 import bs4
 
 from .BaseScraper import BaseScraper, ItemPair
-from .Models.Yeast import Yeast
+from .Models.Yeast import Yeast, Flocculation, str_to_flocculation, str_to_packaging
 from .Models.Ranges import NumericRange
 from .Utils import parallel
 
@@ -293,23 +293,6 @@ class YeastScraper(BaseScraper[Yeast]) :
                 self.parse_yeast_item_from_page(parser, new_yeast, error_list)
                 out_item_list.append(new_yeast)
 
-                if len(new_yeast.comparable_yeasts) > 0 :
-                    for i in range(0, len(new_yeast.comparable_yeasts)) :
-                        url = f"https://beermaverick.com{new_yeast.comparable_yeasts[i]}"
-
-                        # This call is being redirected by server, we just want to map the redirected address in lieu and place of
-                        # the short url; so that we can use the unique url as a key later to replace each yeast per a unique id in the catalogue.
-                        response = self.request_client.get(url, allow_redirects=False) #type: ignore
-                        candidate = self.recover_comparable_yeast_link(response.content,
-                                                                                            response.headers, #type: ignore
-                                                                                            response.status_code,
-                                                                                            new_yeast.comparable_yeasts[i],
-                                                                                            new_yeast)
-
-                        # Reject empty candidates, happens sometimes on some yeasts (the error actually comes from the website!)
-                        # E.g : https://beermaverick.com/yeast/wy2487-hella-bock-lager-wyeast/  -> Has an empty string
-                        if candidate != "" :
-                            new_yeast.comparable_yeasts[i] = candidate
                 if monothread :
                     print("-> Success.")
                 self.treated_item += 1
@@ -350,7 +333,11 @@ class YeastScraper(BaseScraper[Yeast]) :
         bullet_nodes : list[bs4.Tag] = substitution_list_node.find_all("li")
         for bullet in bullet_nodes :
             a_node : bs4.Tag = bullet.find("a") # type: ignore
-            yeast.comparable_yeasts.append(self.format_text(a_node.attrs["href"]))
+            linked_yeast = self.format_text(a_node.attrs["href"])
+
+            # Reject empty references, happen sometimes on the webpages where a new bullet point is empty.
+            if linked_yeast != "":
+                yeast.comparable_yeasts.append(linked_yeast)
 
         return True
 
@@ -382,27 +369,32 @@ class YeastScraper(BaseScraper[Yeast]) :
             return None
         return header[0]
 
-    def parse_numeric_range(self, node : bs4.Tag, range : NumericRange, unit_char : str = "%") -> bool :
+    def parse_numeric_range(self, node : bs4.Tag, unit_char : str = "%") -> Optional[NumericRange]  :
         values = node.contents[0].text.rstrip(unit_char).split("-")
 
         if len(values) < 1 or len(values) > 2:
-            return False
+            return None
+
+        min = 0
+        max = 0
 
         try :
             if len(values) == 1 :
-                range.min.value = float(values[0].strip())
-                range.max.value = range.min.value
+                min = float(values[0].strip())
+                max = min
             if len(values) == 2 :
-                range.min.value = float(values[0].strip())
-                range.max.value = float(values[1].strip())
+                min = float(values[0].strip())
+                max = float(values[1].strip())
         # Might fail if one of the values is not convertible to float (happens with some default values)
         # In some cases, numerical values are replaced by the "Unknown" keyword, which makes parsing more difficult
         except :
-            return False
-        return True
+            return None
 
-    def parse_percentage_value(self, td : bs4.Tag, range : NumericRange) -> bool :
-        return self.parse_numeric_range(td, range, "%")
+        range = NumericRange(min, max)
+        return range
+
+    def parse_percentage_value(self, td : bs4.Tag) -> Optional[NumericRange] :
+        return self.parse_numeric_range(td, "%")
 
     def farenheit_to_degrees(self, farenheit : float) -> float :
         return (farenheit - 32) * 5/9
@@ -443,18 +435,27 @@ class YeastScraper(BaseScraper[Yeast]) :
                 if "Unknown" == value :
                     yeast.add_parsing_error("No available values for attenuation.")
                 else :
-                    if not self.parse_percentage_value(value_node, yeast.attenuation):
+                    yeast.attenuation = self.parse_percentage_value(value_node)
+                    if not yeast.attenuation:
                         error_list.append("Caught unexpected content for attenutation")
 
             elif "Flocculation" in text:
-                yeast.flocculation = value_node.text
+                yeast.flocculation = str_to_flocculation(value_node.text)
 
             elif "Optimal Temperature" in text:
-                if not self.parse_numeric_range(value_node, yeast.optimal_temperature, "° F") :
+                yeast.optimal_temperature = self.parse_numeric_range(value_node, "° F")
+                if not yeast.optimal_temperature:
                     error_list.append("Caught unexpected content for optimal temperatures")
                     continue
                 yeast.optimal_temperature.max.value = round(self.farenheit_to_degrees(yeast.optimal_temperature.max.value))
                 yeast.optimal_temperature.min.value = round(self.farenheit_to_degrees(yeast.optimal_temperature.min.value))
+
+        if not yeast.attenuation :
+            yeast.add_parsing_error("No data for Attenuation")
+        if not yeast.optimal_temperature :
+            yeast.add_parsing_error("No data for Optimal Temperature")
+        if yeast.flocculation == Flocculation.Unknown:
+            yeast.add_parsing_error("No data for Flocculation")
 
         return True
 
@@ -507,13 +508,25 @@ class YeastScraper(BaseScraper[Yeast]) :
             parent_node = th.parent
             td_node : bs4.Tag = parent_node.find("td") #type: ignore
             if content == "Brand:" :
-                yeast.brand = self.format_text(td_node.contents[0].text)
+                brand = self.format_text(td_node.contents[0].text)
+                if brand != "" :
+                    yeast.brand = brand
+                else :
+                    yeast.add_parsing_error("Empty data for Brand")
 
             elif content == "Type:" :
-                yeast.type = self.format_text(td_node.contents[0].text)
+                type = self.format_text(td_node.contents[0].text)
+                if type != "" :
+                    yeast.type = type
+                else :
+                    yeast.add_parsing_error("Empty data for Type")
 
             elif content == "Packet:" :
-                yeast.packaging = self.format_text(td_node.contents[0].text)
+                package = self.format_text(td_node.contents[0].text)
+                if package != "" :
+                    yeast.packaging = str_to_packaging(package)
+                else :
+                    yeast.add_parsing_error("Empty data for Packet")
 
             elif content == "Species:" :
                 yeast.species = []

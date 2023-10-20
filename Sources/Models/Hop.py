@@ -2,7 +2,7 @@
 
 from enum import Enum
 from dataclasses import field, dataclass
-from typing import cast, Any
+from typing import Optional, cast, Any
 
 from .Ranges import RatioRange, NumericRange
 from .ScapedObject import ScrapedObject
@@ -20,7 +20,7 @@ def hop_attribute_from_str(input : str) -> HopAttribute :
         case HopAttribute.Bittering.value :
             return HopAttribute.Bittering
 
-        case HopAttribute.Aromatic.value :
+        case HopAttribute.Aromatic.value | "Aroma":
             return HopAttribute.Aromatic
 
         case HopAttribute.Hybrid.value | "Dual" :
@@ -70,30 +70,31 @@ class RadarChart(Jsonable) :
 @dataclass
 class Hop(ScrapedObject) :
     # Basic characteristics
-    name : str                  = field(default_factory=str)
-    link : str                  = field(default_factory=str)
-    purpose : HopAttribute      = HopAttribute.Bittering
-    country : str               = field(default_factory=str)
-    international_code : str    = field(default_factory=str)
-    cultivar_id : str           = field(default_factory=str)
-    origin_txt : str            = field(default_factory=str)
-    flavor_txt : str            = field(default_factory=str)
-    tags : list[str]            = field(default_factory=list)
+    name :                  str            = field(default_factory=str)
+    link :                  str            = field(default_factory=str)
+    purpose :               HopAttribute   = HopAttribute.Bittering
+    country :               Optional[str]  = field(default=None)
+    international_code :    Optional[str]  = field(default=None)
+    cultivar_id :           Optional[str]  = field(default=None)
+    ownership:              Optional[str]  = field(default=None)
+    origin_txt :            str            = field(default_factory=str)
+    flavor_txt :            str            = field(default_factory=str)
+    tags :                  list[str]      = field(default_factory=list)
 
     # Hop detailed characteristics
-    alpha_acids : NumericRange              = field(default_factory=NumericRange)
-    beta_acids : NumericRange               = field(default_factory=NumericRange)
-    alpha_beta_ratio : RatioRange           = field(default_factory=RatioRange)
-    hop_storage_index : float               = 100
-    co_humulone_normalized : NumericRange   = field(default_factory=NumericRange)
-    total_oils : NumericRange               = field(default_factory=NumericRange)
+    alpha_acids :               Optional[NumericRange]  = field(default=None)
+    beta_acids :                Optional[NumericRange]  = field(default=None)
+    alpha_beta_ratio :          Optional[RatioRange]    = field(default=None)
+    hop_storage_index :         Optional[float]         = field(default=None)
+    co_humulone_normalized :    Optional[NumericRange]  = field(default=None)
+    total_oils :                Optional[NumericRange]  = field(default=None)
 
     # Oil contents
-    myrcene : NumericRange          = field(default_factory=NumericRange)
-    humulene : NumericRange         = field(default_factory=NumericRange)
-    caryophyllene : NumericRange    = field(default_factory=NumericRange)
-    farnesene : NumericRange        = field(default_factory=NumericRange)
-    other_oils : NumericRange       = field(default_factory=NumericRange)
+    myrcene :       Optional[NumericRange]  = field(default=None)
+    humulene :      Optional[NumericRange]  = field(default=None)
+    caryophyllene : Optional[NumericRange]  = field(default=None)
+    farnesene :     Optional[NumericRange]  = field(default=None)
+    other_oils :    Optional[NumericRange]  = field(default=None)
 
     # Textual description of beer styles, this is written in length text.
     # Assuming the populating data comes from an Api of some sort, we can probably identify a pattern and remove it programmatically to
@@ -104,12 +105,12 @@ class Hop(ScrapedObject) :
     # For now this will do, especially if there is no name conflict.
     substitutes : list[str] = field(default_factory=list)
 
-    radar_chart : RadarChart = field(default_factory=RadarChart)
+    radar_chart : Optional[RadarChart] = field(default=None)
 
     def __eq__(self, other: object) -> bool:
-
         if type(self) != type(other) :
             return False
+
         other = cast(Hop, other)
         self = cast(Hop, self)
         identical = True
@@ -120,6 +121,7 @@ class Hop(ScrapedObject) :
         identical &= self.purpose == other.purpose
         identical &= self.country == other.country
         identical &= self.international_code == other.international_code
+        identical &= self.ownership == other.ownership
         identical &= self.cultivar_id == other.cultivar_id
         identical &= self.origin_txt == other.origin_txt
         identical &= self.flavor_txt == other.flavor_txt
@@ -149,29 +151,40 @@ class Hop(ScrapedObject) :
             "purpose" : self.purpose.value,
             "country" : self.country,
             "internationalCode" : self.international_code,
+            "ownership" : self.ownership,
             "cultivarId" : self.cultivar_id,
             "originTxt" : self.origin_txt,
             "flavorTxt" : self.flavor_txt,
             "tags" : self.tags,
-            "alphaAcids" : self.alpha_acids.to_json(),
-            "betaAcids" : self.beta_acids.to_json(),
-            "alphaBetaRatio" : self.alpha_beta_ratio.to_json(),
+            "alphaAcids" : self.alpha_acids.to_json() if self.alpha_acids else None,
+            "betaAcids" : self.beta_acids.to_json() if self.beta_acids else None,
+            "alphaBetaRatio" : self.alpha_beta_ratio.to_json() if self.alpha_beta_ratio else None,
             "hopStorageIndex" : self.hop_storage_index,
-            "coHumuloneNormalized" : self.co_humulone_normalized.to_json(),
-            "totalOils" : self.total_oils.to_json(),
-            "myrcene" : self.myrcene.to_json(),
-            "humulene" : self.humulene.to_json(),
-            "caryophyllene"  : self.caryophyllene.to_json(),
-            "farnesene" : self.farnesene.to_json(),
-            "otherOils" : self.other_oils.to_json(),
+            "coHumuloneNormalized" : self.co_humulone_normalized.to_json() if self.co_humulone_normalized else None,
+            "totalOils" : self.total_oils.to_json() if self.total_oils else None,
+            "myrcene" : self.myrcene.to_json() if self.myrcene else None,
+            "humulene" : self.humulene.to_json() if self.humulene else None,
+            "caryophyllene"  : self.caryophyllene.to_json() if self.caryophyllene else None,
+            "farnesene" : self.farnesene.to_json() if self.farnesene else None,
+            "otherOils" : self.other_oils.to_json() if self.other_oils else None,
             "beerStyles" : self.beer_styles,
             "substitutes" : self.substitutes,
-            "radarChart" : self.radar_chart.to_json()
+            "radarChart" : self.radar_chart.to_json() if self.radar_chart else None
         }
 
         # Doing the parent at the end as it only contains the parsingErrors that we want to go to the end of the object
         content.update(super().to_json())
         return content
+
+    def parse_ratio_range(self, key : str, content : dict[str, Any]) -> Optional[RatioRange]:
+        try :
+            if key in content and content[key] != None:
+                data = RatioRange()
+                data.from_json(content[key])
+                return data
+        except :
+            return None
+        return None
 
     def from_json(self, content : dict[str, Any]) -> None :
         super().from_json(content)
@@ -179,30 +192,56 @@ class Hop(ScrapedObject) :
         self.name = self._read_prop("name", content, "")
         self.id = self._read_prop("id", content, "")
         self.link = self._read_prop("link", content, "")
-        self.purpose = hop_attribute_from_str(self._read_prop("purpose", content, ""))
-        self.country = self._read_prop("country", content, "")
-        self.international_code = self._read_prop("internationalCode", content, "")
-        self.cultivar_id = self._read_prop("cultivarId", content, "")
+        self.purpose = hop_attribute_from_str(self._read_prop("purpose", content, HopAttribute.Bittering))
+
+        # Optionals, direct read either return a value or None, so we're good with this
+        self.country = content["country"]
+        self.international_code = content["internationalCode"]
+        self.cultivar_id = content["cultivarId"]
+        self.ownership = content["ownership"]
+
         self.origin_txt = self._read_prop("originTxt", content, "")
         self.flavor_txt = self._read_prop("flavorTxt", content, "")
         self.tags = self._read_prop("tags", content, "")
-        self.alpha_acids.from_json(content["alphaAcids"])
-        self.beta_acids.from_json(content["betaAcids"])
-        self.alpha_beta_ratio.from_json(content["alphaBetaRatio"])
+
+        self.alpha_acids = self.parse_numeric_range("alphaAcids", content)
+        self.beta_acids = self.parse_numeric_range("betaAcids", content)
+        self.alpha_beta_ratio = self.parse_ratio_range("alphaBetaRatio", content)
+
         self.hop_storage_index = self._read_prop("hopStorageIndex", content, 80)
-        self.co_humulone_normalized.from_json(content["coHumuloneNormalized"])
-        self.total_oils.from_json(content["totalOils"])
-        self.myrcene.from_json(content["myrcene"])
-        self.humulene.from_json(content["humulene"])
-        self.caryophyllene.from_json(content["caryophyllene"])
-        self.farnesene.from_json(content["farnesene"])
-        self.other_oils.from_json(content["otherOils"])
+        self.co_humulone_normalized = self.parse_numeric_range("coHumuloneNormalized", content)
+        self.total_oils = self.parse_numeric_range("totalOils", content)
+        self.myrcene = self.parse_numeric_range("myrcene", content)
+        self.humulene = self.parse_numeric_range("humulene", content)
+        self.caryophyllene = self.parse_numeric_range("caryophyllene", content)
+        self.farnesene = self.parse_numeric_range("farnesene", content)
+        self.other_oils = self.parse_numeric_range("otherOils", content)
+
         self.beer_styles = self._read_prop("beerStyles", content, [])
         self.substitutes = self._read_prop("substitutes", content, [])
 
-        self.radar_chart.from_json(content["radarChart"])
+        radar_chart_key = "radarChart"
+        if radar_chart_key in content and content[radar_chart_key] != None:
+            self.radar_chart = RadarChart()
+            self.radar_chart.from_json(content[radar_chart_key])
 
     def radar_chart_from_bmapi(self, api_model : bmapi.BMHopModel) :
+        """Converts the radar chart from the api into an internal model and scan for all zeros.
+           In case incoming data only contains zeros, it means that data is lacking the radar chart values and we can reject it."""
+        empty = True
+        for item in api_model.primary.radar_chart:
+            if item != 0 :
+                empty = False
+                break
+        # Empty data model won't be usable later on
+        # So check for all zeros, and if so it means we are lacking data.
+        # It'll be easier for consumer code to tell it's missing data and we can't redraw the radar chart.
+        if empty :
+            self.add_parsing_error("No data for radar chart")
+            return
+
+        if self.radar_chart == None :
+            self.radar_chart = RadarChart()
         self.radar_chart.citrus = api_model.primary.radar_chart[0]
         self.radar_chart.tropical_fruit = api_model.primary.radar_chart[1]
         self.radar_chart.stone_fruit = api_model.primary.radar_chart[2]
@@ -212,6 +251,3 @@ class Hop(ScrapedObject) :
         self.radar_chart.herbal = api_model.primary.radar_chart[6]
         self.radar_chart.spice = api_model.primary.radar_chart[7]
         self.radar_chart.resinous = api_model.primary.radar_chart[8]
-
-
-        # Some text
