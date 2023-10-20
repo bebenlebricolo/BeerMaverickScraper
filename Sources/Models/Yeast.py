@@ -92,18 +92,12 @@ class Yeast(ScrapedObject):
         for item in content["tags"] :
             self.tags.append(item)
 
-        self.alcohol_tolerance = content["alcoholTolerance"]
-
-        if "attenuation" in content :
-            self.attenuation = NumericRange()
-            self.attenuation.from_json(content["attenuation"])
-
+        if "alcoholTolerance" in content and content["alcoholTolerance"]:
+            self.alcohol_tolerance = float(content["alcoholTolerance"])
+        self.attenuation = self.parse_numeric_range("attenuation", content)
         self.flocculation = str_to_flocculation(content["flocculation"])
 
-        if "optimalTemperature" in content :
-            self.optimal_temperature = NumericRange()
-            self.optimal_temperature.from_json(content["optimalTemperature"])
-
+        self.optimal_temperature = self.parse_numeric_range("optimalTemperature", content)
         self.comparable_yeasts = []
         for item in content["comparableYeasts"] :
             self.comparable_yeasts.append(item)

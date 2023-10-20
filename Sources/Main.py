@@ -386,6 +386,18 @@ def main(args : list[str]):
         if yeast.id == "" :
             yeast.id = str(uuid.uuid4())
 
+
+    print("Reading yeasts corrections files before yeast post-processing")
+    this_dir = Path(__file__).parent
+    yeast_correction_filepath = this_dir.joinpath("yeasts_corrections.json")
+    yeast_corrections : dict[str, Any] = {}
+    with open(yeast_correction_filepath, 'r') as file :
+        yeast_corrections = json.load(file)
+
+    # Redo that step as the yeasts and hops links were popped out (because of how the reference system works)
+    categorized_links = split_links_by_category(links)
+
+
     for yeast in yeasts :
         for i in range(0, len(yeast.comparable_yeasts)):
             # Data originally contains a link that points to the substitute hop,
@@ -394,8 +406,13 @@ def main(args : list[str]):
 
             target_link = [item for item in categorized_links.yeasts if linked_yeast_name.lower() in item]
             if len(target_link) == 0:
-                print(f"Yeast : \"{yeast.name}\" with link : {yeast.link} has issues in comparable yeasts : \"{linked_yeast_name}\"")
-                continue
+                # Use yeasts corrections patch file now !
+                correction = [x["link"] for x in yeast_corrections["yeasts"] if x["alias"] == linked_yeast_name]
+                if len(correction) == 0 or correction[0] == None :
+                    print(f"Yeast : \"{yeast.name}\" with link : {yeast.link} has issues in comparable yeasts : \"{linked_yeast_name}\"")
+                    continue
+                target_link = correction
+                print(f"Yeast : \"{yeast.name}\" referenced yeast was fixed for reference : \"{linked_yeast_name}\"")
 
             target = [item for item in yeasts if item.link == target_link[0]]
             if len(target) != 0 :

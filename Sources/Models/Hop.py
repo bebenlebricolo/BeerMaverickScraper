@@ -176,16 +176,6 @@ class Hop(ScrapedObject) :
         content.update(super().to_json())
         return content
 
-    def parse_numeric_range(self, key : str, content : dict[str, Any]) -> Optional[NumericRange]:
-        try :
-            if key in content and content[key] != None:
-                data = NumericRange()
-                data.from_json(content[key])
-                return data
-        except :
-            return None
-        return None
-
     def parse_ratio_range(self, key : str, content : dict[str, Any]) -> Optional[RatioRange]:
         try :
             if key in content and content[key] != None:
